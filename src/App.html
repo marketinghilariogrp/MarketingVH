@@ -89,7 +89,8 @@
         <form class="login-card" id="fLogin">
           <div class="marca"><span class="logo">VH</span><div><strong>MarketingVH</strong><small>Gestión de equipo</small></div></div>
           <label>Correo<input name="correo" type="email" autocomplete="username" required></label>
-          <label>PIN<input name="pin" type="password" inputmode="numeric" pattern="\\d{4,8}" autocomplete="current-password" required></label>
+          <label>PIN (solo números)<input name="pin" type="password" inputmode="numeric" pattern="\\d{4,8}" maxlength="8"
+            title="Tu PIN tiene entre 4 y 8 números" placeholder="••••••" autocomplete="current-password" required></label>
           <p class="error" id="loginError">${esc(mensaje || '')}</p>
           <button class="btn primario" type="submit">Ingresar</button>
         </form>
@@ -355,7 +356,8 @@
       <form class="panel" id="fPin">
         <p style="margin:0">${esc(S.u.nombre)} · ${esc(S.u.correo)}<br><small>${ROL_TXT[S.u.rol]} · ${esc(S.u.area)}</small></p>
         <label>PIN actual<input name="actual" type="password" inputmode="numeric" autocomplete="current-password" required></label>
-        <label>PIN nuevo (4 a 8 números)<input name="nuevo" type="password" inputmode="numeric" pattern="\\d{4,8}" autocomplete="new-password" required></label>
+        <label>PIN nuevo (4 a 8 números)<input name="nuevo" type="password" inputmode="numeric" pattern="\\d{4,8}" maxlength="8"
+          title="Entre 4 y 8 números" autocomplete="new-password" required></label>
         <label>Repite el PIN nuevo<input name="repetir" type="password" inputmode="numeric" autocomplete="new-password" required></label>
         <p class="error" id="pinError"></p>
         <button class="btn primario" type="submit">Cambiar PIN</button>
