@@ -254,6 +254,10 @@
   .fila-personal { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr auto auto; gap: 6px; align-items: center; margin-bottom: 6px; }
   .fila-personal input, .fila-personal select { padding: 7px 8px; font-size: 13px; }
   .fila-personal label.check { font-size: 12.5px; white-space: nowrap; }
+  .fila-alquiler { display: grid; grid-template-columns: 1fr 1.6fr 64px 1fr 90px 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .fila-alquiler input, .fila-alquiler select { padding: 7px 8px; font-size: 13px; }
+  .chip-alquiler { display: inline-block; margin-top: 4px; font-size: 12px; padding: 2px 9px; border-radius: 10px; background: var(--columna); }
+  .chip-alquiler.pendiente { background: color-mix(in srgb, var(--media) 18%, transparent); }
   .sugerencias { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .sugerencias small { color: var(--suave); }
   .chip-sug { border: 1px dashed var(--suave); background: none; border-radius: 14px; padding: 3px 10px; cursor: pointer; font-size: 12.5px; }
@@ -452,6 +456,9 @@
     .tres > :first-child { grid-column: 1 / -1; }
     .fila-personal { background: var(--fondo); border: 1px solid var(--borde); border-radius: 10px; padding: 8px; }
     .fila-personal input, .fila-personal select { font-size: 16px; background: var(--panel); }
+    .fila-alquiler { grid-template-columns: 1fr 1fr; background: var(--fondo); border: 1px solid var(--borde); border-radius: 10px; padding: 8px; }
+    .fila-alquiler [data-k=detalle] { grid-column: 1 / -1; }
+    .fila-alquiler input, .fila-alquiler select { font-size: 16px; background: var(--panel); }
     .modal { padding: 18px 16px; }
     .fondo { padding: 8px; }
     .top h1 { font-size: 18px; }

@@ -25,6 +25,9 @@ function getInicio(token) {
       tiposAgenda: lista_('tipos_agenda'),
       tiposAgendaPersonal: lista_('tipos_agenda_personal'),
       marcaHoras: marcaHoras_(u),
+      gestionaAlquiler: puedeAlquiler_(u),
+      equiposAlquiler: equiposAlquiler_(),
+      estadosAlquiler: ESTADOS_ALQUILER,
       coordinadorPuedeAprobar: cfg.coordinador_puede_aprobar === 'SI',
       jornadaHoras: Number(cfg.jornada_horas) || 8,
       moneda: cfg.moneda || 'S/'

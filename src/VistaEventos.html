@@ -40,7 +40,7 @@
                 <td><span class="fecha-chip">${diaSemana(ev.fecha)}<b>${ev.fecha.slice(8)}</b></span></td>
                 <td class="ancho"><b>${esc(ev.titulo)}</b> <span class="etiqueta">${esc(ev.empresa)}</span>
                   <small>${[ev.hora_inicio && (ev.hora_inicio + (ev.hora_fin ? '–' + ev.hora_fin : '')), ev.lugar].filter(Boolean).map(esc).join(' · ')}</small></td>
-                <td class="personal">${chipsPersonal(ev)}</td>
+                <td class="personal">${chipsPersonal(ev)}${S.cfg.gestionaAlquiler && ev.alquiler && ev.alquiler.length ? resumenAlquiler(ev.alquiler) : ''}</td>
                 <td><span class="estado e-${esc(ev.estado)}">${ESTADO_EV[ev.estado] || esc(ev.estado)}</span></td>
                 ${esGestor() ? `<td><button class="btn mini" data-editar="${esc(ev.id)}">Editar</button></td>` : ''}</tr>`).join('')
                 || '<tr><td colspan="5" class="vacio">No hay eventos este mes.</td></tr>'}</tbody>
@@ -55,6 +55,7 @@
               { vacio: 'Sin eventos cubiertos.' })}
           </section>
         </div>
+        ${S.cfg.gestionaAlquiler ? htmlAlquilerMes(d.eventos) : ''}
         <section class="card sin-pad">
           <div class="cab-card pad"><h3>Historial ${mes.slice(0, 4)} · eventos cubiertos por persona y mes</h3></div>
           <p class="sub pad-x">Haz clic en un número para ver qué eventos cubrió esa persona ese mes.</p>
@@ -86,6 +87,45 @@
       }
     }
   };
+
+  /* ---------- Alquiler de equipos (solo admin y Jefferson) ---------- */
+
+  function filaAlquiler(a = {}) {
+    return `<div class="fila-alquiler" data-id="${esc(a.id || '')}">
+      <select data-k="equipo" aria-label="Equipo">${opciones(S.cfg.equiposAlquiler, a.equipo)}</select>
+      <input data-k="detalle" placeholder="Modelo / detalle (ej. Sony FX3, 24-70 mm)" value="${esc(a.detalle)}" maxlength="200">
+      <input data-k="cantidad" type="number" min="1" max="99" value="${esc(a.cantidad || 1)}" aria-label="Cantidad" title="Cantidad">
+      <input data-k="proveedor" placeholder="Proveedor" value="${esc(a.proveedor)}" maxlength="120">
+      <input data-k="costo" type="number" min="0" step="0.01" placeholder="Costo S/" value="${a.costo === null || a.costo === undefined ? '' : esc(a.costo)}" aria-label="Costo">
+      <select data-k="estado" aria-label="Estado">${opciones(S.cfg.estadosAlquiler, a.estado)}</select>
+      <button type="button" class="btn-ico quitar" aria-label="Quitar">×</button>
+    </div>`;
+  }
+
+  function resumenAlquiler(lista) {
+    const pendientes = lista.filter(a => a.estado === 'Por cotizar' || a.estado === 'Cotizado').length;
+    const unidades = lista.reduce((s, a) => s + a.cantidad, 0);
+    return `<span class="chip-alquiler${pendientes ? ' pendiente' : ''}" title="${esc(lista.map(a => a.cantidad + '× ' + a.equipo + (a.detalle ? ' (' + a.detalle + ')' : '') + ' · ' + a.estado).join('\n'))}">
+      📦 ${unidades} equipo${unidades === 1 ? '' : 's'} a alquilar${pendientes ? ` · ${pendientes} por confirmar` : ''}</span>`;
+  }
+
+  function htmlAlquilerMes(eventos) {
+    const conEq = eventos.filter(e => e.alquiler && e.alquiler.length && e.estado !== 'cancelado');
+    if (!conEq.length) return '';
+    const total = conEq.reduce((s, e) => s + e.alquiler.reduce((t, a) => t + (a.costo || 0), 0), 0);
+    const pendientes = conEq.reduce((s, e) => s + e.alquiler.filter(a => a.estado === 'Por cotizar' || a.estado === 'Cotizado').length, 0);
+    return `<section class="card sin-pad">
+      <div class="cab-card pad"><h3>Alquiler de equipos del mes</h3>
+        <span class="sub">${pendientes ? `<b class="alerta">${pendientes} por confirmar</b> · ` : ''}Costo estimado: <b>S/ ${fmtNum(total, 2)}</b></span></div>
+      <div class="tabla-caja plana"><table>
+        <thead><tr><th>Evento</th><th>Equipo</th><th class="num">Cant.</th><th>Proveedor</th><th class="num">Costo</th><th>Estado</th></tr></thead>
+        <tbody>${conEq.map(e => e.alquiler.map((a, i) => `<tr>
+          <td>${i ? '' : `<b>${fmtFecha(e.fecha)} · ${esc(e.titulo)}</b>`}</td>
+          <td>${esc(a.equipo)}${a.detalle ? `<small>${esc(a.detalle)}</small>` : ''}</td><td class="num">${a.cantidad}</td>
+          <td>${esc(a.proveedor) || '—'}</td><td class="num">${a.costo === null ? '—' : 'S/ ' + fmtNum(a.costo, 2)}</td>
+          <td><span class="estado ${a.estado === 'Confirmado' || a.estado === 'Devuelto' ? 'e-realizado' : 'e-pendiente'}">${esc(a.estado)}</span></td></tr>`).join('')).join('')}</tbody>
+      </table></div></section>`;
+  }
 
   function filaPersonal(p = {}) {
     return `<div class="fila-personal">
@@ -126,6 +166,10 @@
       <div class="cab-card"><b>Personal del evento</b><button type="button" class="btn mini" id="bAgregarP">+ Agregar persona</button></div>
       <div id="personal">${x.personal.map(filaPersonal).join('')}</div>
       <div id="sugerencias" class="sugerencias"><small>Calculando sugerencias…</small></div>
+      ${S.cfg.gestionaAlquiler ? `<div class="cab-card"><b>Alquiler de equipos</b><button type="button" class="btn mini" id="bAgregarEq">+ Agregar equipo</button></div>
+        <p class="sub">Solo lo ven el administrador y Jefferson.</p>
+        <div id="alquiler">${(x.alquiler || []).map(filaAlquiler).join('')}</div>
+        <p class="sub" id="totalAlquiler"></p>` : ''}
       ${ev && esAdmin() ? '<div><button type="button" class="btn mini peligro" id="bEliminarEv">Eliminar este evento</button></div>' : ''}`,
       async (d, f) => {
         d.personal = $$('.fila-personal', f).map(fila => ({
@@ -136,6 +180,15 @@
           estado: $('[data-k=ausente]', fila).checked ? 'ausente' : ''
         }));
         if (d.personal.some(p => !p.usuario_id)) throw new Error('Elige a la persona en cada fila o quita la fila vacía.');
+        if (S.cfg.gestionaAlquiler) d.alquiler = $$('.fila-alquiler', f).map(fila => ({
+          id: fila.dataset.id || '',
+          equipo: $('[data-k=equipo]', fila).value,
+          detalle: $('[data-k=detalle]', fila).value,
+          cantidad: $('[data-k=cantidad]', fila).value,
+          proveedor: $('[data-k=proveedor]', fila).value,
+          costo: $('[data-k=costo]', fila).value,
+          estado: $('[data-k=estado]', fila).value
+        }));
         if (ev) d.id = ev.id;
         const r = await api('guardarEvento', d);
         aviso(ev ? 'Evento actualizado' : 'Evento creado');
@@ -148,6 +201,17 @@
     if ($('#bEliminarEv', form)) $('#bEliminarEv', form).onclick = () => eliminarEvento(ev, () => form.parentElement.remove());
     $('#bAgregarP', form).onclick = () => cont.insertAdjacentHTML('beforeend', filaPersonal({ funcion: S.cfg.funcionesEvento[0] }));
     cont.onclick = e => { if (e.target.closest('.quitar')) e.target.closest('.fila-personal').remove(); };
+    if (S.cfg.gestionaAlquiler) {
+      const eq = $('#alquiler', form);
+      const total = () => {
+        const suma = $$('[data-k=costo]', eq).reduce((s, i) => s + (Number(i.value) || 0), 0);
+        $('#totalAlquiler', form).textContent = $$('.fila-alquiler', eq).length ? `Costo total estimado: S/ ${fmtNum(suma, 2)}` : '';
+      };
+      $('#bAgregarEq', form).onclick = () => { eq.insertAdjacentHTML('beforeend', filaAlquiler({})); total(); };
+      eq.onclick = e => { if (e.target.closest('.quitar')) { e.target.closest('.fila-alquiler').remove(); total(); } };
+      eq.oninput = total;
+      total();
+    }
 
     // Sugerencias: personas de la rotación (incluye practicantes) ordenadas por menos eventos en el mes.
     const pintarSug = async () => {

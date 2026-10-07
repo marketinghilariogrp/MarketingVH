@@ -66,7 +66,7 @@ function conteoEventos_(eventos) {
 }
 
 function listarEventos(token, mes) {
-  sesion_(token);
+  const u = sesion_(token);
   mes = mesValido_(mes);
   const anio = mes.slice(0, 4);
   const delAnio = eventosConPersonal_(e => e.fecha.slice(0, 4) === anio);
@@ -84,7 +84,7 @@ function listarEventos(token, mes) {
   });
 
   return {
-    mes: mes, eventos: delMes, conteoMes: conteoEventos_(delMes), conteoAnio: conteoEventos_(delAnio),
+    mes: mes, eventos: adjuntarAlquiler_(delMes, u), conteoMes: conteoEventos_(delMes), conteoAnio: conteoEventos_(delAnio),
     historial: Object.keys(historial).map(k => historial[k]).sort((a, b) => a.nombre.localeCompare(b.nombre))
   };
 }
@@ -168,6 +168,8 @@ function guardarEvento(token, d) {
     mismoDia.forEach(e => e.personal.forEach(p => {
       if (vistos[p.usuario_id]) avisos.push((nombres[p.usuario_id] || '—') + ' también está en «' + e.titulo + '»');
     }));
+    // Equipos a alquilar: solo admin y Config.gestion_alquiler; si no tiene permiso se ignora.
+    if (Array.isArray(d.alquiler) && puedeAlquiler_(u)) guardarAlquilerInterno_(u, ev.id, d.alquiler);
     return { id: ev.id, avisos: avisos };
   });
 }

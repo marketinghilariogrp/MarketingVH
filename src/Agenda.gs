@@ -140,7 +140,7 @@ function getCalendario(token, mes) {
   const enMes = f => String(f).slice(0, 7) === mes;
   return {
     mes: mes,
-    eventos: eventosConPersonal_(e => enMes(e.fecha)),
+    eventos: adjuntarAlquiler_(eventosConPersonal_(e => enMes(e.fecha)), u),
     agenda: leerTabla_('Agenda').filter(a => enMes(a.fecha) && agendaVisible_(a, u)).map(a => agendaCliente_(a, u, nombres)),
     tareas: leerTabla_('Tareas')
       .filter(t => enMes(t.vence) && t.estado !== 'cancelada' && t.estado !== 'eliminada' && (esGestor_(u) || t.usuario_id === u.id))

@@ -32,6 +32,7 @@ const ESQUEMA = {
   // inversion está en la moneda original de la cuenta (columna moneda: PEN o USD).
   Pauta_diaria: ['fuente_id', 'marca', 'fecha', 'fecha_fin', 'campana', 'inversion', 'alcance', 'impresiones',
     'clics', 'resultados', 'tipo_resultado', 'leads', 'mensajes', 'moneda'],
+  Alquileres: ['id', 'evento_id', 'equipo', 'detalle', 'cantidad', 'proveedor', 'costo', 'estado', 'creado_por', 'actualizado'],
   Redes_cuentas: ['id', 'marca', 'red', 'usuario', 'url', 'activo'],
   Redes_metricas: ['id', 'cuenta_id', 'mes', 'seguidores', 'alcance', 'visualizaciones', 'interacciones',
     'publicaciones', 'registrado_por', 'actualizado'],
@@ -59,7 +60,11 @@ function db_() {
 
 function hoja_(nombre) {
   if (memoHojas_[nombre]) return memoHojas_[nombre];
-  const sh = db_().getSheetByName(nombre);
+  let sh = db_().getSheetByName(nombre);
+  if (!sh && ESQUEMA[nombre]) {
+    try { prepararHoja_(db_(), nombre); } catch (e) { /* otra ejecución la acaba de crear */ }
+    sh = db_().getSheetByName(nombre);
+  }
   if (!sh) throw new Error('Falta la hoja ' + nombre + '. Ejecuta setup() en el editor.');
   memoHojas_[nombre] = sh;
   return sh;
