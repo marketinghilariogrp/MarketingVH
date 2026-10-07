@@ -8,7 +8,9 @@ const ESQUEMA = {
   Usuarios: ['id', 'nombre', 'correo', 'rol', 'area', 'pin_hash', 'jornada_horas', 'activo', 'creado'],
   Tareas: ['id', 'titulo', 'descripcion', 'usuario_id', 'creada_por', 'prioridad', 'estado',
     'creada', 'vence', 'completada', 'peso', 'nota', 'actualizada',
-    'marca', 'campana', 'pieza', 'tipo', 'solicitud_id', 'archivada'],
+    'marca', 'campana', 'pieza', 'tipo', 'solicitud_id', 'archivada', 'pausa_motivo'],
+  // Cada cambio de estado de una tarea, con fecha y hora (para medir tiempos de trabajo y pausas).
+  Tareas_historial: ['id', 'tarea_id', 'usuario_id', 'fecha_hora', 'desde', 'hasta', 'motivo'],
   Solicitudes: ['id', 'titulo', 'descripcion', 'tipo', 'marca', 'solicitante_id', 'prioridad',
     'fecha_entrega', 'estado', 'tarea_id', 'creada', 'actualizada', 'nota'],
   Horas: ['id', 'usuario_id', 'fecha', 'inicio', 'fin', 'horas', 'funcion', 'marca', 'tarea_id',

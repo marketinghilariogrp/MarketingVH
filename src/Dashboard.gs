@@ -3,7 +3,7 @@
  * Las mismas alertas se envían por correo cada mañana (trigger alertasDiarias).
  */
 
-const ABIERTAS = ['pendiente', 'en_progreso', 'revision'];
+const ABIERTAS = ['pendiente', 'en_progreso', 'pausada', 'revision'];
 
 /** Lista de alertas. Si u es null (trigger) se calculan las del equipo completo. */
 function alertas_(u, datos) {

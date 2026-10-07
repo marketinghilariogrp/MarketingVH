@@ -15,12 +15,17 @@ const TRANSICIONES = {
   ],
   en_progreso: [
     { a: 'revision', quien: 'responsable', etiqueta: 'Enviar a revisión' },
+    { a: 'pausada', quien: 'responsable', etiqueta: 'Pausar', nota: true, motivo: 'Escribe el motivo de la pausa.' },
     { a: 'pendiente', quien: 'responsable', etiqueta: 'Volver a pendiente' },
+    { a: 'cancelada', quien: 'gestor', etiqueta: 'Cancelar', confirmar: true }
+  ],
+  pausada: [
+    { a: 'en_progreso', quien: 'responsable', etiqueta: 'Reanudar' },
     { a: 'cancelada', quien: 'gestor', etiqueta: 'Cancelar', confirmar: true }
   ],
   revision: [
     { a: 'aprobada', quien: 'aprobador', etiqueta: 'Aprobar' },
-    { a: 'en_progreso', quien: 'gestor', etiqueta: 'Devolver', nota: true }
+    { a: 'en_progreso', quien: 'gestor', etiqueta: 'Devolver', nota: true, motivo: 'Escribe el motivo de la devolución.' }
   ],
   aprobada: [
     { a: 'revision', quien: 'admin', etiqueta: 'Reabrir', confirmar: true }
@@ -42,7 +47,8 @@ function puede_(u, quien, t, cfg) {
   return false;
 }
 
-function tareaCliente_(t, u, cfg, nombres) {
+/** hist: historial de la tarea (solo se envía al admin, para medir tiempos). */
+function tareaCliente_(t, u, cfg, nombres, hist) {
   return {
     id: t.id,
     titulo: t.titulo,
@@ -56,6 +62,8 @@ function tareaCliente_(t, u, cfg, nombres) {
     vence: t.vence,
     completada: t.completada,
     nota: t.nota,
+    pausa_motivo: t.estado === 'pausada' ? t.pausa_motivo : '',
+    tiempos: u.rol === 'admin' && hist ? tiemposTarea_(hist, t.estado) : null,
     marca: t.marca,
     campana: t.campana,
     pieza: t.pieza,
@@ -63,7 +71,7 @@ function tareaCliente_(t, u, cfg, nombres) {
     acciones: (TRANSICIONES[t.estado] || [])
       .filter(tr => puede_(u, tr.quien, t, cfg))
       .map(tr => ({ a: tr.a, etiqueta: tr.etiqueta, nota: !!tr.nota, confirmar: !!tr.confirmar })),
-    editable: esGestor_(u) && ['pendiente', 'en_progreso', 'revision'].indexOf(t.estado) >= 0,
+    editable: esGestor_(u) && ['pendiente', 'en_progreso', 'pausada', 'revision'].indexOf(t.estado) >= 0,
     archivable: esGestor_(u) && t.estado === 'aprobada' && t.archivada !== 'SI',
     eliminable: u.rol === 'admin',
     peso: Number(t.peso) || 0
@@ -74,6 +82,7 @@ function tareaCliente_(t, u, cfg, nombres) {
 function tareasPara_(u) {
   const cfg = config_();
   const nombres = mapaNombres_();
+  const hist = historialPorTarea_(u);
   const limite = Utilities.formatDate(new Date(Date.now() - DIAS_HISTORIAL * 864e5),
     Session.getScriptTimeZone(), 'yyyy-MM-dd');
   return leerTabla_('Tareas')
@@ -84,7 +93,7 @@ function tareasPara_(u) {
       if (t.estado === 'cancelada') return t.actualizada >= limite;
       return true;
     })
-    .map(t => tareaCliente_(t, u, cfg, nombres));
+    .map(t => tareaCliente_(t, u, cfg, nombres, hist ? hist[t.id] || [] : null));
 }
 
 function listarTareas(token) {
@@ -137,6 +146,7 @@ function crearTareaInterna_(u, datos, solicitudId) {
     completada: '', nota: '', actualizada: ahora, solicitud_id: solicitudId
   }, datos);
   agregarFila_('Tareas', t);
+  registrarHistorial_(t.id, u.id, '', 'pendiente', '');
   log_(u.id, 'crear_tarea', t.id, t.titulo);
   return t;
 }
@@ -147,7 +157,7 @@ function editarTarea(token, d) {
   const datos = validarTarea_(d || {});
   return conLock_(() => {
     const t = buscarTarea_(d.id);
-    if (['pendiente', 'en_progreso', 'revision'].indexOf(t.estado) < 0) {
+    if (['pendiente', 'en_progreso', 'pausada', 'revision'].indexOf(t.estado) < 0) {
       throw new Error('Solo se pueden editar tareas abiertas.');
     }
     Object.assign(t, datos, { actualizada: ahora_() });
@@ -168,7 +178,7 @@ function moverTarea(token, id, estado, nota) {
     if (!tr || !puede_(u, tr.quien, t, cfg)) throw new Error('Ese cambio de estado no está permitido.');
 
     nota = texto_(nota, 1000);
-    if (tr.nota && !nota) throw new Error('Escribe el motivo de la devolución.');
+    if (tr.nota && !nota) throw new Error(tr.motivo || 'Escribe el motivo.');
 
     const antes = t.estado;
     t.estado = estado;
@@ -178,12 +188,19 @@ function moverTarea(token, id, estado, nota) {
     } else if (antes === 'aprobada') {
       t.completada = '';
     }
-    if (nota) t.nota = nota;
+    // El motivo de la pausa se guarda aparte; la nota es solo para devoluciones.
+    if (estado === 'pausada') t.pausa_motivo = nota;
+    else {
+      t.pausa_motivo = '';
+      if (nota) t.nota = nota;
+    }
     t.actualizada = ahora_();
 
     escribirFila_('Tareas', t);
+    registrarHistorial_(t.id, u.id, antes, estado, nota);
     log_(u.id, 'estado_tarea', t.id, antes + ' → ' + estado + (nota ? ' · ' + nota : ''));
-    return tareaCliente_(t, u, cfg, mapaNombres_());
+    const hist = u.rol === 'admin' ? leerTabla_('Tareas_historial').filter(h => h.tarea_id === t.id) : null;
+    return tareaCliente_(t, u, cfg, mapaNombres_(), hist);
   });
 }
 
@@ -227,6 +244,7 @@ function listarHistorico(token, desde, hasta, usuarioId) {
   if (!esGestor_(u)) usuarioId = u.id;
   const cfg = config_();
   const nombres = mapaNombres_();
+  const hist = historialPorTarea_(u);
   const tareas = leerTabla_('Tareas').filter(t => t.estado === 'aprobada' &&
     t.completada.slice(0, 10) >= desde && t.completada.slice(0, 10) <= hasta && (!usuarioId || t.usuario_id === usuarioId));
   const porPersona = {};
@@ -237,11 +255,90 @@ function listarHistorico(token, desde, hasta, usuarioId) {
     if (t.completada.slice(0, 10) <= t.vence) p.aTiempo++;
   });
   return {
-    tareas: tareas.map(t => tareaCliente_(t, u, cfg, nombres)).sort((a, b) => b.completada.localeCompare(a.completada)),
+    tareas: tareas.map(t => tareaCliente_(t, u, cfg, nombres, hist ? hist[t.id] || [] : null)).sort((a, b) => b.completada.localeCompare(a.completada)),
     personas: Object.keys(porPersona).map(k => {
       const p = porPersona[k];
       p.pctATiempo = p.tareas ? Math.round(p.aTiempo / p.tareas * 100) : null;
       return p;
     }).sort((a, b) => b.peso - a.peso)
+  };
+}
+
+/* ---------- Historial de acciones y tiempos (inicio, trabajo efectivo, pausas) ---------- */
+
+/** Registra un cambio de estado con fecha y hora. Llamar dentro de conLock_. */
+function registrarHistorial_(tareaId, usuarioId, desde, hasta, motivo) {
+  agregarFila_('Tareas_historial', { id: uuid_(), tarea_id: tareaId, usuario_id: usuarioId, fecha_hora: ahora_(),
+    desde: desde, hasta: hasta, motivo: motivo || '' });
+}
+
+/** { tarea_id: [cambios ordenados] } — solo para el admin (los demás no reciben tiempos). */
+function historialPorTarea_(u) {
+  if (u.rol !== 'admin') return null;
+  const m = {};
+  leerTabla_('Tareas_historial').forEach(h => { (m[h.tarea_id] = m[h.tarea_id] || []).push(h); });
+  return m;
+}
+
+function minutosDelDia_(fh) {
+  return Number(fh.slice(11, 13)) * 60 + Number(fh.slice(14, 16));
+}
+
+/** Minutos entre dos momentos (yyyy-MM-dd HH:mm:ss) que caen dentro del horario laboral. */
+function minutosLaborables_(desde, hasta) {
+  if (!desde || !hasta || hasta <= desde) return 0;
+  const h = horario_();
+  let total = 0;
+  for (let f = desde.slice(0, 10); f <= hasta.slice(0, 10); f = sumarDias_(f, 1)) {
+    const tramo = tramoLaboral_(f, h);
+    if (!tramo) continue;
+    const ini = f === desde.slice(0, 10) ? Math.max(tramo[0], minutosDelDia_(desde)) : tramo[0];
+    const fin = f === hasta.slice(0, 10) ? Math.min(tramo[1], minutosDelDia_(hasta)) : tramo[1];
+    if (fin > ini) total += fin - ini;
+  }
+  return total;
+}
+
+/**
+ * Tiempos de una tarea a partir de su historial:
+ * - inicio: primera vez que pasó a «en progreso»
+ * - efectivo: minutos «en progreso» dentro del horario laboral
+ * - pausado: minutos «en pausa» dentro del horario laboral (y cuántas pausas)
+ * - entrega: última vez que se envió a revisión
+ * Si la tarea sigue en progreso o en pausa, se cuenta hasta ahora.
+ */
+function tiemposTarea_(hist, estadoActual) {
+  const h = (hist || []).slice().sort((a, b) => a.fecha_hora.localeCompare(b.fecha_hora));
+  const inicio = (h.find(x => x.hasta === 'en_progreso') || {}).fecha_hora || '';
+  if (!inicio) return { inicio: '', entrega: '', efectivo: 0, pausado: 0, pausas: 0 };
+  let efectivo = 0;
+  let pausado = 0;
+  h.forEach((x, i) => {
+    const fin = h[i + 1] ? h[i + 1].fecha_hora : (['en_progreso', 'pausada'].indexOf(estadoActual) >= 0 ? ahora_() : x.fecha_hora);
+    if (x.hasta === 'en_progreso') efectivo += minutosLaborables_(x.fecha_hora, fin);
+    if (x.hasta === 'pausada') pausado += minutosLaborables_(x.fecha_hora, fin);
+  });
+  const envios = h.filter(x => x.hasta === 'revision');
+  return {
+    inicio: inicio,
+    entrega: envios.length ? envios[envios.length - 1].fecha_hora : '',
+    efectivo: efectivo,
+    pausado: pausado,
+    pausas: h.filter(x => x.hasta === 'pausada').length
+  };
+}
+
+/** Todas las acciones de una tarea, con persona, fecha y hora (solo admin). */
+function getHistorialTarea(token, id) {
+  const u = sesion_(token);
+  exigirAdmin_(u);
+  const t = buscarTarea_(id);
+  const nombres = mapaNombres_();
+  const hist = leerTabla_('Tareas_historial').filter(h => h.tarea_id === id).sort((a, b) => a.fecha_hora.localeCompare(b.fecha_hora));
+  return {
+    titulo: t.titulo,
+    responsable: nombres[t.usuario_id] || '—',
+    tiempos: tiemposTarea_(hist, t.estado),
+    acciones: hist.map(h => ({ fecha_hora: h.fecha_hora, persona: nombres[h.usuario_id] || '—', desde: h.desde, hasta: h.hasta, motivo: h.motivo }))
   };
 }

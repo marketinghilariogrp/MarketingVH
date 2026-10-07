@@ -1,7 +1,11 @@
 <script>
   /* ---------- Producción: tablero de tareas ---------- */
 
-  const COLUMNAS = [['pendiente', 'Pendiente'], ['en_progreso', 'En progreso'], ['revision', 'En revisión'], ['aprobada', 'Aprobada']];
+  const COLUMNAS = [['pendiente', 'Pendiente'], ['en_progreso', 'En progreso'], ['pausada', 'En pausa'], ['revision', 'En revisión'], ['aprobada', 'Aprobada']];
+
+  /** 135 → «2 h 15 min» */
+  const fmtMinutos = m => (m < 60 ? Math.round(m) + ' min' : Math.floor(m / 60) + ' h' + (Math.round(m % 60) ? ' ' + Math.round(m % 60) + ' min' : ''));
+  const fmtMomento = fh => (fh ? fmtFecha(fh).slice(0, 5) + ' ' + fh.slice(11, 16) : '—');
   // Orden dentro de cada columna: primero la prioridad (alta → baja) y luego la entrega más próxima.
   const PESO_PRIO = { alta: 0, media: 1, baja: 2 };
   const ordenTareas = (a, b) => (PESO_PRIO[a.prioridad] ?? 3) - (PESO_PRIO[b.prioridad] ?? 3) ||
@@ -19,6 +23,8 @@
         ${t.pieza && t.pieza !== t.titulo ? `<p class="sub">Pieza: ${esc(t.pieza)}</p>` : ''}
         ${t.descripcion ? `<p class="desc">${esc(t.descripcion)}</p>` : ''}
         ${t.nota ? `<p class="nota"><b>Devuelta:</b> ${esc(t.nota)}</p>` : ''}
+        ${t.estado === 'pausada' && t.pausa_motivo ? `<p class="nota pausa"><b>⏸ En pausa:</b> ${esc(t.pausa_motivo)}</p>` : ''}
+        ${t.tiempos && t.tiempos.inicio ? `<p class="tiempos">⏱ Inició ${fmtMomento(t.tiempos.inicio)} · trabajo ${fmtMinutos(t.tiempos.efectivo)}${t.tiempos.pausas ? ` · pausa ${fmtMinutos(t.tiempos.pausado)} (${t.tiempos.pausas})` : ''}${t.tiempos.entrega ? ` · entregó ${fmtMomento(t.tiempos.entrega)}` : ''}</p>` : ''}
         ${t.guardando ? '<p class="persona">Guardando…</p>' : ''}
         ${esGestor() ? `<p class="persona"><span class="avatar">${iniciales(t.responsable)}</span>${esc(t.responsable)}</p>` : ''}
         ${t.estado === 'aprobada' && t.completada ? `<p class="persona">Aprobada el ${fmtFecha(t.completada)}</p>` : ''}
@@ -27,6 +33,7 @@
           ${t.editable ? `<button class="btn mini fantasma" data-id="${esc(t.id)}" data-accion="editar">Editar</button>` : ''}
           ${t.archivable ? `<button class="btn mini" data-id="${esc(t.id)}" data-accion="archivar">Al histórico</button>` : ''}
           ${t.eliminable ? `<button class="btn mini fantasma peligro" data-id="${esc(t.id)}" data-accion="eliminar">Eliminar</button>` : ''}
+          ${esAdmin() ? `<button class="btn mini fantasma" data-id="${esc(t.id)}" data-accion="historial">Historial</button>` : ''}
         </div>
       </article>`;
   }
@@ -98,6 +105,7 @@
       const t = S.tareas.find(x => x.id === b.dataset.id);
       if (!t) return;
       if (b.dataset.accion === 'editar') return formTarea(t);
+      if (b.dataset.accion === 'historial') return verHistorialTarea(t.id);
       if (b.dataset.accion === 'archivar' || b.dataset.accion === 'eliminar') {
         const eliminar = b.dataset.accion === 'eliminar';
         if (eliminar) await confirmar(`¿Eliminar la tarea «${t.titulo}»? Ya no contará en la producción ni en el histórico.`, 'Eliminar');
@@ -111,7 +119,7 @@
       }
       const acc = t.acciones.find(a => a.a === b.dataset.accion);
       if (!acc) return;
-      if (acc.nota) return formDevolver(t, acc);
+      if (acc.nota) return formMotivo(t, acc);
       if (acc.confirmar) await confirmar(`¿${acc.etiqueta} la tarea «${t.titulo}»?`, acc.etiqueta);
       moverOptimista(t, acc);
     };
@@ -121,14 +129,15 @@
    * Mueve la tarjeta al instante (sin esperar al servidor) y guarda por detrás.
    * Si el servidor rechaza el cambio, la tarjeta vuelve a su lugar y se avisa.
    */
-  async function moverOptimista(t, acc) {
+  async function moverOptimista(t, acc, nota) {
     const anterior = t;
     const destino = (COLUMNAS.find(c => c[0] === acc.a) || [])[1] || acc.a;
-    reemplazarTarea(Object.assign({}, t, { estado: acc.a, acciones: [], editable: false, archivable: false, eliminable: false, guardando: true }));
+    reemplazarTarea(Object.assign({}, t, { estado: acc.a, acciones: [], editable: false, archivable: false, eliminable: false, guardando: true,
+      pausa_motivo: acc.a === 'pausada' ? nota : '' }));
     if (S.vista === 'tareas') pintarTablero();
     if (S.colMovil && S.colMovil !== acc.a && window.matchMedia('(max-width: 640px)').matches) aviso('Movida a «' + destino + '»');
     try {
-      reemplazarTarea(await api('moverTarea', t.id, acc.a, ''));
+      reemplazarTarea(await api('moverTarea', t.id, acc.a, nota || ''));
     } catch (err) {
       reemplazarTarea(anterior);
       aviso(err.message, 'error');
@@ -136,14 +145,39 @@
     if (S.vista === 'tareas') pintarTablero();
   }
 
-  function formDevolver(t, acc) {
-    modal(`Devolver «${t.titulo}»`, `
-      <label>¿Qué hay que corregir?<textarea name="nota" rows="4" maxlength="1000" required></textarea></label>`,
-      async d => {
-        reemplazarTarea(await api('moverTarea', t.id, acc.a, d.nota));
-        aviso('Tarea devuelta');
-        pintarTablero();
-      }, 'Devolver');
+  /** Pide el motivo (pausa o devolución) y luego mueve la tarjeta al instante. */
+  function formMotivo(t, acc) {
+    const pausa = acc.a === 'pausada';
+    modal(`${pausa ? 'Pausar' : 'Devolver'} «${t.titulo}»`, `
+      <label>${pausa ? '¿Por qué se pausa esta tarea?' : '¿Qué hay que corregir?'}
+        <textarea name="nota" rows="3" maxlength="1000" required placeholder="${pausa ? 'Ej.: esperando material del cliente, reunión, otra prioridad…' : ''}"></textarea></label>
+      ${pausa ? '<p class="sub">Cuando puedas continuar, pulsa «Reanudar» en la tarjeta.</p>' : ''}`,
+      async d => { moverOptimista(t, acc, d.nota); }, pausa ? 'Pausar' : 'Devolver');
+  }
+
+  /** Historial de acciones con fecha y hora (solo admin). */
+  async function verHistorialTarea(id) {
+    let h;
+    try { h = await api('getHistorialTarea', id); } catch (e) { return aviso(e.message, 'error'); }
+    const ACCION = { pendiente: 'Creada / volvió a pendiente', en_progreso: 'En progreso', pausada: 'Pausó', revision: 'Envió a revisión',
+      aprobada: 'Aprobada', cancelada: 'Cancelada' };
+    const accion = a => (a.hasta === 'en_progreso' ? (a.desde === 'pausada' ? 'Reanudó' : a.desde === 'revision' ? 'Devuelta para corregir' : 'Empezó')
+      : a.hasta === 'pendiente' && !a.desde ? 'Creada' : ACCION[a.hasta] || a.hasta);
+    const t = h.tiempos;
+    modal(`Historial · ${h.titulo}`, `
+      <p class="sub">Responsable: <b>${esc(h.responsable)}</b></p>
+      ${t.inicio ? `<div class="kpis mini">
+        <div class="kpi"><span class="kpi-v">${fmtMomento(t.inicio)}</span><span class="kpi-k">Inicio</span></div>
+        <div class="kpi"><span class="kpi-v">${fmtMinutos(t.efectivo)}</span><span class="kpi-k">Trabajo efectivo</span></div>
+        <div class="kpi"><span class="kpi-v">${fmtMinutos(t.pausado)}</span><span class="kpi-k">En pausa (${t.pausas})</span></div>
+        <div class="kpi"><span class="kpi-v">${fmtMomento(t.entrega)}</span><span class="kpi-k">Envío a revisión</span></div>
+      </div>
+      <p class="sub">Los tiempos cuentan solo el horario laboral (L–V 9:00–18:30, sáb 9:00–13:00), así las noches y fines de semana no inflan el total.</p>`
+      : '<p class="sub">Esta tarea todavía no se ha empezado.</p>'}
+      <ul class="lista">${h.acciones.map(a => `<li>
+        <span class="fecha-chip">${diaSemana(a.fecha_hora.slice(0, 10))}<b>${a.fecha_hora.slice(8, 10)}</b></span>
+        <div><b>${esc(accion(a))}</b> · ${esc(a.fecha_hora.slice(11, 16))}<small>${esc(a.persona)}${a.motivo ? ' · ' + esc(a.motivo) : ''}</small></div></li>`).join('')
+        || '<li class="vacio">Sin acciones registradas todavía.</li>'}</ul>`, null);
   }
 
   function formTarea(t) {
@@ -175,7 +209,7 @@
   /* ---------- Solicitudes internas ---------- */
 
   const ESTADO_SOL = { nueva: 'Nueva', asignada: 'Asignada', rechazada: 'Rechazada' };
-  const ESTADO_TAREA = { pendiente: 'Pendiente', en_progreso: 'En progreso', revision: 'En revisión', aprobada: 'Aprobada', cancelada: 'Cancelada' };
+  const ESTADO_TAREA = { pendiente: 'Pendiente', en_progreso: 'En progreso', pausada: 'En pausa', revision: 'En revisión', aprobada: 'Aprobada', cancelada: 'Cancelada' };
 
   VISTAS.solicitudes = {
     titulo: 'Solicitudes internas',
@@ -258,18 +292,18 @@
       const filas = S.usuarios.filter(u => u.rol !== 'admin').map(u => {
         const ts = S.tareas.filter(t => t.usuario_id === u.id);
         const n = e => ts.filter(t => t.estado === e).length;
-        const abiertas = n('pendiente') + n('en_progreso') + n('revision');
-        return { u, p: n('pendiente'), e: n('en_progreso'), r: n('revision'), a: n('aprobada'), v: ts.filter(estaVencida).length, abiertas };
+        const abiertas = n('pendiente') + n('en_progreso') + n('pausada') + n('revision');
+        return { u, p: n('pendiente'), e: n('en_progreso'), pa: n('pausada'), r: n('revision'), a: n('aprobada'), v: ts.filter(estaVencida).length, abiertas };
       });
       $('#vista').innerHTML = `
         <p class="sub">Tareas por integrante. Haz clic en una fila para ver su tablero.</p>
         <div class="tabla-caja"><table>
-          <thead><tr><th>Persona</th><th>Área</th><th class="num">Pendientes</th><th class="num">En progreso</th>
+          <thead><tr><th>Persona</th><th>Área</th><th class="num">Pendientes</th><th class="num">En progreso</th><th class="num">En pausa</th>
             <th class="num">En revisión</th><th class="num">Vencidas</th><th class="num">Aprobadas (30 días)</th><th>Carga</th></tr></thead>
           <tbody>${filas.map(f => `<tr class="clic" data-id="${esc(f.u.id)}">
             <td><span class="persona"><span class="avatar">${iniciales(f.u.nombre)}</span>${esc(f.u.nombre)}</span></td>
             <td>${esc(f.u.area)}${f.u.rol === 'practicante' ? ' <span class="etiqueta">Practicante</span>' : ''}</td>
-            <td class="num">${f.p}</td><td class="num">${f.e}</td><td class="num">${f.r}</td>
+            <td class="num">${f.p}</td><td class="num">${f.e}</td><td class="num">${f.pa}</td><td class="num">${f.r}</td>
             <td class="num ${f.v ? 'alerta' : ''}">${f.v}</td><td class="num">${f.a}</td>
             <td><span class="medidor"><span style="width:${Math.min(100, f.abiertas / max * 100)}%" class="${f.abiertas > max ? 'alto' : ''}"></span></span></td></tr>`).join('')}</tbody>
         </table></div>`;
@@ -311,12 +345,16 @@
           </table></div></section>` : ''}
         <section class="card sin-pad"><div class="cab-card pad"><h3>Tareas <span class="cuenta">${tareas.length}</span></h3></div>
           <div class="tabla-caja plana"><table>
-            <thead><tr><th>Tarea</th>${esGestor() ? '<th>Responsable</th>' : ''}<th>Marca</th><th>Tipo</th><th>Prioridad</th><th>Entrega</th><th>Aprobada</th><th>A tiempo</th></tr></thead>
+            <thead><tr><th>Tarea</th>${esGestor() ? '<th>Responsable</th>' : ''}<th>Marca</th><th>Tipo</th><th>Prioridad</th><th>Entrega</th><th>Aprobada</th><th>A tiempo</th>${esAdmin() ? '<th>Inició</th><th class="num">Trabajo</th><th class="num">Pausa</th><th></th>' : ''}</tr></thead>
             <tbody>${tareas.map(t => `<tr><td class="ancho"><b>${esc(t.titulo)}</b>${t.pieza && t.pieza !== t.titulo ? `<small>${esc(t.pieza)}</small>` : ''}</td>
               ${esGestor() ? `<td>${esc(t.responsable)}</td>` : ''}<td>${esc(t.marca)}</td><td>${esc(t.tipo)}</td>
               <td><span class="chip p-${esc(t.prioridad)}">${PRIO_TXT[t.prioridad] || ''}</span></td>
               <td>${fmtFecha(t.vence)}</td><td>${fmtFecha(t.completada)}</td>
-              <td>${t.completada.slice(0, 10) <= t.vence ? '<span class="sube">Sí</span>' : '<span class="baja">No</span>'}</td></tr>`).join('')
+              <td>${t.completada.slice(0, 10) <= t.vence ? '<span class="sube">Sí</span>' : '<span class="baja">No</span>'}</td>
+              ${esAdmin() ? `<td>${t.tiempos && t.tiempos.inicio ? fmtMomento(t.tiempos.inicio) : '—'}</td>
+                <td class="num">${t.tiempos && t.tiempos.inicio ? fmtMinutos(t.tiempos.efectivo) : '—'}</td>
+                <td class="num">${t.tiempos && t.tiempos.pausas ? fmtMinutos(t.tiempos.pausado) : '—'}</td>
+                <td><button class="btn mini fantasma" data-hist="${esc(t.id)}">Historial</button></td>` : ''}</tr>`).join('')
               || '<tr><td colspan="8" class="vacio">Sin tareas en este rango.</td></tr>'}</tbody>
           </table></div></section>`;
       $('#hDesde').onchange = e => { S.desdeHist = e.target.value; repintar(); };
@@ -324,6 +362,8 @@
       $('#hMarca').onchange = e => { S.marcaHist = e.target.value; repintar(); };
       if ($('#hPersona')) $('#hPersona').onchange = e => { S.personaHist = e.target.value; repintar(); };
       $('#vista').onclick = e => {
+        const bh = e.target.closest('[data-hist]');
+        if (bh) return verHistorialTarea(bh.dataset.hist);
         const tr = e.target.closest('tr[data-p]');
         if (tr) { S.personaHist = tr.dataset.p; repintar(); }
       };

@@ -40,3 +40,5 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
 - Logística por evento (Logistica.gs): catálogo en hoja Inventario (buscador), ítems en hoja Logistica; los alquilados
   se incluyen siempre. Exporta a Google Sheet (carpeta «MarketingVH · Logística», mismo archivo al regenerar).
 - Las hojas/columnas nuevas del ESQUEMA se crean solas al primer uso (hoja_ llama a prepararHoja_).
+- Tareas: estado 'pausada' (motivo en pausa_motivo). Cada cambio de estado se guarda en Tareas_historial; el admin ve
+  inicio, trabajo efectivo y pausas (solo en horario laboral) y el historial de cada tarea.
