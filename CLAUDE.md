@@ -29,3 +29,11 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
   y los totales que mezclan monedas se muestran por separado (`totales_().monedas`, `montoTexto_`).
 - Horario: L–V 9:00–18:30, sáb 9:00–13:00; fuera de eso es sobretiempo (Sobretiempo.gs).
 - Pruebas: lógica del servidor con stubs en Node (vm) y la interfaz con un `prueba-local.html` que simula google.script.run.
+- Notificaciones: la hoja «Requerimiento de Diseño 2026» (Config.hoja_requerimientos) dispara alEditarRequerimientos
+  (trigger instalable onEdit). Gabriela recibe todo; Blue además Nexo/V&C; Chris además Academia VHB, Marca Personal,
+  Ede 2.0, VH CONSULTING (Config.notif_requerimientos_*). Recordatorios de agenda: trigger cada 5 min + correo.
+- Agenda personal (privado = SI) solo la ve quien la creó; lo del equipo lo ven todos. Borrado lógico: estado
+  'eliminado' (agenda/eventos) y 'eliminada' (tareas). Tareas aprobadas pueden ir al histórico (archivada = SI).
+- Horas: hoja Asistencia (ingreso/salida por día). Sobretiempo compensable solo si ese día la persona tenía evento
+  asignado. Practicantes: 25 h/semana. Chris y Cesi no cubren eventos ni marcan horas (Config.excluidos_*).
+- Informes = solo pauta. El crecimiento de redes va en Redes sociales → Reporte (exporta a Google Sheets).
