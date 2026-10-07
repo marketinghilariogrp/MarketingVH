@@ -11,7 +11,7 @@
   function tarjeta(t) {
     const vencida = estaVencida(t);
     const meta = [t.marca, t.tipo, t.campana].filter(Boolean).map(esc).join(' · ');
-    return `<article class="tarjeta p-${esc(t.prioridad)}${vencida ? ' vencida' : ''}">
+    return `<article class="tarjeta p-${esc(t.prioridad)}${vencida ? ' vencida' : ''}${t.guardando ? ' guardando' : ''}">
         <div class="meta"><span class="chip p-${esc(t.prioridad)}">${PRIO_TXT[t.prioridad] || ''}</span>
           ${t.vence ? `<span class="fecha">${vencida ? 'Vencida · ' : 'Entrega '}${fmtFecha(t.vence)}</span>` : ''}</div>
         <h4>${esc(t.titulo)}</h4>
@@ -19,6 +19,7 @@
         ${t.pieza && t.pieza !== t.titulo ? `<p class="sub">Pieza: ${esc(t.pieza)}</p>` : ''}
         ${t.descripcion ? `<p class="desc">${esc(t.descripcion)}</p>` : ''}
         ${t.nota ? `<p class="nota"><b>Devuelta:</b> ${esc(t.nota)}</p>` : ''}
+        ${t.guardando ? '<p class="persona">Guardando…</p>' : ''}
         ${esGestor() ? `<p class="persona"><span class="avatar">${iniciales(t.responsable)}</span>${esc(t.responsable)}</p>` : ''}
         ${t.estado === 'aprobada' && t.completada ? `<p class="persona">Aprobada el ${fmtFecha(t.completada)}</p>` : ''}
         <div class="acciones">
@@ -112,12 +113,27 @@
       if (!acc) return;
       if (acc.nota) return formDevolver(t, acc);
       if (acc.confirmar) await confirmar(`¿${acc.etiqueta} la tarea «${t.titulo}»?`, acc.etiqueta);
-      try {
-        reemplazarTarea(await api('moverTarea', t.id, acc.a, ''));
-        aviso('Tarea actualizada');
-        pintarTablero();
-      } catch (err) { aviso(err.message, 'error'); }
+      moverOptimista(t, acc);
     };
+  }
+
+  /**
+   * Mueve la tarjeta al instante (sin esperar al servidor) y guarda por detrás.
+   * Si el servidor rechaza el cambio, la tarjeta vuelve a su lugar y se avisa.
+   */
+  async function moverOptimista(t, acc) {
+    const anterior = t;
+    const destino = (COLUMNAS.find(c => c[0] === acc.a) || [])[1] || acc.a;
+    reemplazarTarea(Object.assign({}, t, { estado: acc.a, acciones: [], editable: false, archivable: false, eliminable: false, guardando: true }));
+    if (S.vista === 'tareas') pintarTablero();
+    if (S.colMovil && S.colMovil !== acc.a && window.matchMedia('(max-width: 640px)').matches) aviso('Movida a «' + destino + '»');
+    try {
+      reemplazarTarea(await api('moverTarea', t.id, acc.a, ''));
+    } catch (err) {
+      reemplazarTarea(anterior);
+      aviso(err.message, 'error');
+    }
+    if (S.vista === 'tareas') pintarTablero();
   }
 
   function formDevolver(t, acc) {

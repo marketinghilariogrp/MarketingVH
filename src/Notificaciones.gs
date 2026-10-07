@@ -28,6 +28,7 @@ function notificar_(usuarioIds, tipo, titulo, detalle, enlace, clave) {
     }
   });
   agregarFilas_('Notificaciones', nuevas);
+  olvidarContador_(usuarioIds);
 }
 
 function listarNotificaciones(token) {
@@ -39,7 +40,17 @@ function listarNotificaciones(token) {
 
 function contarNotificaciones(token) {
   const u = sesion_(token);
-  return leerTabla_('Notificaciones').filter(n => n.usuario_id === u.id && n.leida !== 'SI').length;
+  const cache = CacheService.getScriptCache();
+  const guardado = cache.get('notif_' + u.id);
+  if (guardado !== null) return Number(guardado);
+  const n = leerTabla_('Notificaciones').filter(x => x.usuario_id === u.id && x.leida !== 'SI').length;
+  cache.put('notif_' + u.id, String(n), 600);
+  return n;
+}
+
+/** El contador en caché se borra cuando cambian las notificaciones de esas personas. */
+function olvidarContador_(usuarioIds) {
+  CacheService.getScriptCache().removeAll(usuarioIds.filter(Boolean).map(id => 'notif_' + id));
 }
 
 /** Marca como leídas las indicadas, o todas si ids está vacío. */
@@ -51,6 +62,7 @@ function marcarNotificaciones(token, ids) {
       .filter(n => n.usuario_id === u.id && n.leida !== 'SI' && (!ids.length || ids.indexOf(n.id) >= 0))
       .forEach(n => { n.leida = 'SI'; escribirFila_('Notificaciones', n); });
   });
+  olvidarContador_([u.id]);
   return true;
 }
 
