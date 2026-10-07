@@ -37,3 +37,6 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
 - Horas: hoja Asistencia (ingreso/salida por día). Sobretiempo compensable solo si ese día la persona tenía evento
   asignado. Practicantes: 25 h/semana. Chris y Cesi no cubren eventos ni marcan horas (Config.excluidos_*).
 - Informes = solo pauta. El crecimiento de redes va en Redes sociales → Reporte (exporta a Google Sheets).
+- Logística por evento (Logistica.gs): catálogo en hoja Inventario (buscador), ítems en hoja Logistica; los alquilados
+  se incluyen siempre. Exporta a Google Sheet (carpeta «MarketingVH · Logística», mismo archivo al regenerar).
+- Las hojas/columnas nuevas del ESQUEMA se crean solas al primer uso (hoja_ llama a prepararHoja_).

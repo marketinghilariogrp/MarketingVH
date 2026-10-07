@@ -20,7 +20,7 @@ const ESQUEMA = {
   // Compensaciones de sobretiempo (días u horas libres, pago) registradas por el admin / RR. HH.
   Ajustes_saldo: ['id', 'usuario_id', 'fecha', 'motivo', 'tipo', 'cantidad', 'registrado_por', 'creado'],
   Eventos: ['id', 'fecha', 'titulo', 'detalle', 'lugar', 'calendar_id', 'estado',
-    'empresa', 'hora_inicio', 'hora_fin', 'creado_por', 'actualizada'],
+    'empresa', 'hora_inicio', 'hora_fin', 'creado_por', 'actualizada', 'logistica_url'],
   Cobertura: ['id', 'evento_id', 'usuario_id', 'rol_en_evento', 'estado', 'zona', 'horario', 'nota'],
   Agenda: ['id', 'fecha', 'hora', 'titulo', 'tipo', 'marca', 'campana', 'responsable_id', 'estado',
     'detalle', 'origen', 'creado_por', 'actualizada', 'red', 'formato', 'pilar', 'enlace', 'estado_material',
@@ -32,6 +32,8 @@ const ESQUEMA = {
   // inversion está en la moneda original de la cuenta (columna moneda: PEN o USD).
   Pauta_diaria: ['fuente_id', 'marca', 'fecha', 'fecha_fin', 'campana', 'inversion', 'alcance', 'impresiones',
     'clics', 'resultados', 'tipo_resultado', 'leads', 'mensajes', 'moneda'],
+  Inventario: ['id', 'categoria', 'nombre', 'origen', 'activo', 'creado'],
+  Logistica: ['id', 'evento_id', 'categoria', 'nombre', 'cantidad', 'origen', 'responsable', 'observaciones', 'orden', 'estado', 'actualizado'],
   Alquileres: ['id', 'evento_id', 'equipo', 'detalle', 'cantidad', 'proveedor', 'costo', 'estado', 'creado_por', 'actualizado'],
   Redes_cuentas: ['id', 'marca', 'red', 'usuario', 'url', 'activo'],
   Redes_metricas: ['id', 'cuenta_id', 'mes', 'seguidores', 'alcance', 'visualizaciones', 'interacciones',
@@ -66,6 +68,10 @@ function hoja_(nombre) {
     sh = db_().getSheetByName(nombre);
   }
   if (!sh) throw new Error('Falta la hoja ' + nombre + '. Ejecuta setup() en el editor.');
+  // Si el ESQUEMA tiene columnas nuevas (al final), se agregan solas a la hoja.
+  if (ESQUEMA[nombre] && sh.getLastColumn() < ESQUEMA[nombre].length) {
+    try { prepararHoja_(db_(), nombre); } catch (e) { /* se reintenta en la próxima llamada */ }
+  }
   memoHojas_[nombre] = sh;
   return sh;
 }

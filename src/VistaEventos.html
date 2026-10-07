@@ -46,6 +46,7 @@
                 || '<tr><td colspan="5" class="vacio">No hay eventos este mes.</td></tr>'}</tbody>
             </table></div>
           </section>
+          <div class="columna-lateral">
           <section class="card">
             <div class="cab-card"><h3>Rotación</h3>
               <div class="pestanas mini"><button class="pestana ${verAnio ? '' : 'activo'}" data-rot="">Mes</button>
@@ -54,6 +55,15 @@
             ${barras(conteo.map(x => ({ k: x.nombre, v: x.eventos, extra: x.indice !== null ? '×' + x.indice : '', clase: indiceClase(x.indice) })),
               { vacio: 'Sin eventos cubiertos.' })}
           </section>
+          ${esGestor() ? `<section class="card">
+            <h3>Logística del evento</h3>
+            <p class="sub">Lista de equipos y activos que salen al evento, con check de salida y retorno. Incluye los equipos alquilados.</p>
+            <div class="logistica-elegir">
+              <select id="lEvento" aria-label="Evento">${opciones(d.eventos.filter(e => e.estado !== 'cancelado').map(e => [e.id, fmtFecha(e.fecha).slice(0, 5) + ' · ' + e.titulo]), '', d.eventos.length ? 'Elige un evento…' : 'No hay eventos este mes')}</select>
+              <button class="btn primario" id="bLogistica">Armar lista</button>
+            </div>
+          </section>` : ''}
+          </div>
         </div>
         ${S.cfg.gestionaAlquiler ? htmlAlquilerMes(d.eventos) : ''}
         <section class="card sin-pad">
@@ -77,6 +87,11 @@
           <div><b>${esc(x.titulo)}</b> <span class="etiqueta">${esc(x.empresa)}</span><small>${esc(x.funcion)}</small></div></li>`).join('')}</ul>`, null);
       };
       enlazarNavMes($('#vista'), mes, m => { S.mesEventos = m; repintar(); });
+      if ($('#bLogistica')) $('#bLogistica').onclick = () => {
+        const id = $('#lEvento').value;
+        if (!id) return aviso('Elige un evento.', 'error');
+        abrirLogistica(id);
+      };
       $$('[data-rot]').forEach(b => { b.onclick = () => { S.rotacionAnio = !!b.dataset.rot; repintar(); }; });
       if (esGestor()) {
         $('#bNuevoEv').onclick = () => formEvento(null, mes === mesActual() ? S.hoy : mes + '-01');
@@ -468,5 +483,138 @@
         ${a.eliminable ? '<button type="button" class="btn mini peligro" id="bEliminarAg2">Eliminar</button>' : ''}</div>`, null);
     if ($('#bHechoAg', form)) $('#bHechoAg', form).onclick = () => { cerrar(); marcarAgenda(a.id, 'hecho'); };
     if ($('#bEliminarAg2', form)) $('#bEliminarAg2', form).onclick = () => eliminarAgendaItem(a, cerrar);
+  }
+
+  /* ---------- Logística del evento: equipos y activos con check de salida y retorno ---------- */
+
+  async function abrirLogistica(eventoId) {
+    let d;
+    try { d = await api('getLogistica', eventoId); } catch (e) { return aviso(e.message, 'error'); }
+    const ev = d.evento;
+    let items = d.items.map(x => Object.assign({}, x));
+    const responsables = S.usuarios.map(u => u.nombre);
+    const origenes = Array.from(new Set(d.catalogo.map(c => c.origen).concat(S.cfg.marcas).filter(Boolean)));
+
+    const { form, cerrar } = modal(`Logística · ${ev.titulo}`, `
+      <p class="sub">${[fmtFecha(ev.fecha), ev.hora_inicio && (ev.hora_inicio + (ev.hora_fin ? '–' + ev.hora_fin : '')), ev.lugar, ev.empresa].filter(Boolean).map(esc).join(' · ')}</p>
+      <datalist id="dlCatalogo">${d.catalogo.map(c => `<option value="${esc(c.nombre)}">${esc(c.categoria)}</option>`).join('')}</datalist>
+      <datalist id="dlOrigen">${origenes.map(o => `<option value="${esc(o)}">`).join('')}</datalist>
+      <datalist id="dlResp">${responsables.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
+      <div class="log-agregar">
+        <label class="log-nombre">Equipo / Activo<input id="lNombre" list="dlCatalogo" placeholder="Busca o escribe (ej. Cámara Sony FX3)" autocomplete="off"></label>
+        <label>Categoría<select id="lCategoria">${opciones(d.categorias, d.categorias[0])}</select></label>
+        <label>Cant.<input id="lCantidad" type="number" min="1" value="1"></label>
+        <label>Origen / Ubicación<input id="lOrigen" list="dlOrigen" placeholder="Ej. Nexo, oficina"></label>
+        <label>Responsable<input id="lResp" list="dlResp" placeholder="Nombre"></label>
+        <button type="button" class="btn primario" id="lAgregar">Agregar</button>
+      </div>
+      <p class="sub">Los equipos que registres quedan guardados en el buscador para la próxima vez.</p>
+      <div class="tabla-caja plana"><table class="log-tabla">
+        <thead><tr><th>Ítem</th><th>Categoría</th><th>Equipo / Activo</th><th>Cant.</th><th>Origen / Ubicación</th><th>Responsable</th><th>Observaciones</th><th></th></tr></thead>
+        <tbody id="lFilas"></tbody>
+      </table></div>
+      ${d.url ? `<p class="sub">Último Google Sheet generado: <a href="${esc(d.url)}" target="_blank" rel="noopener">abrir ↗</a></p>` : ''}
+      <div class="log-acciones">
+        <button type="button" class="btn" id="lImprimir">Imprimir checklist</button>
+        <button type="button" class="btn" id="lHoja">Generar Google Sheet</button>
+      </div>`,
+      async () => { await guardar(); aviso('Lista de logística guardada'); }, 'Guardar lista', true, true);
+
+    form.classList.add('muy-ancho');
+    const tbody = $('#lFilas', form);
+    const pintar = () => {
+      const filas = items.map((x, i) => `<tr data-i="${i}">
+          <td>${i + 1}</td>
+          <td><select data-k="categoria">${opciones(d.categorias.includes(x.categoria) ? d.categorias : d.categorias.concat(x.categoria), x.categoria)}</select></td>
+          <td class="ancho"><b>${esc(x.nombre)}</b></td>
+          <td><input class="cant" data-k="cantidad" type="number" min="1" value="${esc(x.cantidad)}"></td>
+          <td><input data-k="origen" list="dlOrigen" value="${esc(x.origen)}"></td>
+          <td><input data-k="responsable" list="dlResp" value="${esc(x.responsable)}"></td>
+          <td><input data-k="observaciones" value="${esc(x.observaciones)}" placeholder="Ej. falta cargar"></td>
+          <td><button type="button" class="btn-ico quitar" aria-label="Quitar">×</button></td></tr>`).join('');
+      const alquilados = d.alquiler.map((x, i) => `<tr class="alquilado">
+          <td>${items.length + i + 1}</td><td>Alquiler</td><td class="ancho"><b>${esc(x.nombre)}</b></td><td>${x.cantidad}</td>
+          <td>${esc(x.origen)}</td><td>—</td><td><small>${esc(x.observaciones)}</small></td><td title="Se incluye automáticamente">🔒</td></tr>`).join('');
+      tbody.innerHTML = filas + alquilados || '<tr><td colspan="8" class="vacio">Agrega los equipos y activos que salen al evento.</td></tr>';
+    };
+    pintar();
+
+    // Al elegir un equipo del buscador se completan su categoría y su origen.
+    $('#lNombre', form).oninput = e => {
+      const c = d.catalogo.find(x => normalTexto(x.nombre) === normalTexto(e.target.value));
+      if (!c) return;
+      if (d.categorias.includes(c.categoria)) $('#lCategoria', form).value = c.categoria;
+      if (c.origen) $('#lOrigen', form).value = c.origen;
+    };
+    const agregar = () => {
+      const nombre = $('#lNombre', form).value.trim();
+      if (!nombre) return aviso('Escribe o elige el equipo.', 'error');
+      const cant = Number($('#lCantidad', form).value) || 1;
+      const existe = items.find(x => normalTexto(x.nombre) === normalTexto(nombre));
+      if (existe) existe.cantidad = Number(existe.cantidad) + cant;
+      else items.push({ id: '', categoria: $('#lCategoria', form).value, nombre, cantidad: cant,
+        origen: $('#lOrigen', form).value.trim(), responsable: $('#lResp', form).value.trim(), observaciones: '' });
+      $('#lNombre', form).value = '';
+      $('#lCantidad', form).value = 1;
+      $('#lNombre', form).focus();
+      pintar();
+    };
+    $('#lAgregar', form).onclick = agregar;
+    $('#lNombre', form).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); agregar(); } };
+    tbody.oninput = tbody.onchange = e => {
+      const tr = e.target.closest('tr[data-i]');
+      if (!tr || !e.target.dataset.k) return;
+      items[Number(tr.dataset.i)][e.target.dataset.k] = e.target.value;
+    };
+    tbody.onclick = e => {
+      if (!e.target.closest('.quitar')) return;
+      items.splice(Number(e.target.closest('tr').dataset.i), 1);
+      pintar();
+    };
+
+    const guardar = async () => {
+      d = await api('guardarLogistica', eventoId, items);
+      items = d.items.map(x => Object.assign({}, x));
+      pintar();
+    };
+    $('#lHoja', form).onclick = async e => {
+      const b = e.target;
+      b.disabled = true;
+      b.textContent = 'Generando…';
+      try {
+        await guardar();
+        const r = await api('exportarLogistica', eventoId);
+        d.url = r.url;
+        modal('Logística lista', `<p>Se generó «${esc(r.titulo)}» con ${r.items} ítems, en tu Drive (carpeta «MarketingVH · Logística»).
+          Si lo vuelves a generar, se actualiza el mismo archivo.</p>
+          <p><a class="btn primario" href="${esc(r.url)}" target="_blank" rel="noopener">Abrir Google Sheet ↗</a></p>`, null);
+      } catch (err) { aviso(err.message, 'error'); }
+      b.disabled = false;
+      b.textContent = 'Generar Google Sheet';
+    };
+    $('#lImprimir', form).onclick = () => imprimirLogistica(ev, items, d.alquiler);
+  }
+
+  const normalTexto = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+
+  /** Imprime el checklist con casillas de salida y retorno para marcar a mano. */
+  function imprimirLogistica(ev, items, alquiler) {
+    const orden = [];
+    items.forEach(x => { if (!orden.includes(x.categoria)) orden.push(x.categoria); });
+    const filas = orden.reduce((acc, c) => acc.concat(items.filter(x => x.categoria === c)), []).concat(alquiler);
+    $('#zonaImpresion').innerHTML = `
+      <h1>LOGÍSTICA · ${esc(ev.titulo.toUpperCase())}</h1>
+      <p><b>${[fmtFecha(ev.fecha), ev.hora_inicio && (ev.hora_inicio + (ev.hora_fin ? '–' + ev.hora_fin : '')), ev.lugar, ev.empresa].filter(Boolean).map(esc).join('  ·  ')}</b>
+        ${ev.personal.length ? `<br>Equipo de marketing: ${esc(ev.personal.join(', '))}` : ''}</p>
+      <table><thead><tr><th>Ítem</th><th>Categoría</th><th>Equipo / Activo</th><th>Cant.</th><th>Origen / Ubicación</th><th>Responsable</th><th>Salida</th><th>Retorno</th><th>Observaciones</th></tr></thead>
+      <tbody>${filas.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.categoria)}</td><td>${esc(x.nombre)}</td><td>${esc(x.cantidad)}</td>
+        <td>${esc(x.origen)}</td><td>${esc(x.responsable)}</td><td style="text-align:center"><span class="caja"></span></td>
+        <td style="text-align:center"><span class="caja"></span></td><td>${esc(x.observaciones)}</td></tr>`).join('')}</tbody></table>
+      <div class="firmas"><span>Entregó</span><span>Recibió</span><span>Retornó</span></div>`;
+    document.body.classList.add('imprimiendo');
+    const limpiar = () => { document.body.classList.remove('imprimiendo'); window.removeEventListener('afterprint', limpiar); };
+    window.addEventListener('afterprint', limpiar);
+    window.print();
+    setTimeout(limpiar, 1000);
   }
 </script>

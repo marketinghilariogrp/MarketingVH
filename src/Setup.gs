@@ -32,6 +32,8 @@ const CONFIG_INICIAL = [
   ['gestion_alquiler', 'Jefferson', 'Quiénes (además del admin) ven y editan el alquiler de equipos de los eventos'],
   ['equipos_alquiler', 'Cámara,Lente,Memoria,Transmisor,PTZ,Batería,Trípode,Estabilizador,Micrófono,Iluminación,Drone,Otro',
     'Tipos de equipo que se pueden alquilar para un evento'],
+  ['categorias_logistica', 'Audiovisuales,Materiales,Branding,Merchandising,Tecnología,Mobiliario,Alimentos y bebidas,Otro',
+    'Categorías para la lista de logística de eventos'],
   ['horas_semana_practicante', '25', 'Horas semanales de los practicantes; lo que pase de esto es sobretiempo'],
   ['tipos_agenda_personal', 'Reunión,Recordatorio,Pendiente personal,Cita,Otro', 'Tipos de la agenda personal de cada persona'],
   ['hoja_requerimientos', 'https://docs.google.com/spreadsheets/d/1aRccmzKT2oMAkqdoGbSPsnxARFnnWl3rMO-AIqIq9jo/edit',

@@ -389,6 +389,24 @@
   .parrilla-acceso small { display: block; color: var(--suave); }
   .parrilla-acceso .flecha { color: var(--marca); font-size: 18px; }
 
+  /* Logística de eventos */
+  .columna-lateral { display: grid; gap: 16px; align-content: start; }
+  .logistica-elegir { display: flex; gap: 8px; flex-wrap: wrap; }
+  .logistica-elegir select { flex: 1 1 180px; width: auto; }
+  .log-agregar { display: grid; grid-template-columns: 2fr 1.1fr 70px 1.1fr 1.1fr auto; gap: 6px; align-items: end; padding: 10px;
+    border: 1px dashed var(--borde); border-radius: 10px; background: var(--fondo); }
+  .log-agregar label { font-size: 12px; }
+  .log-agregar input, .log-agregar select { padding: 7px 8px; font-size: 13px; background: var(--panel); }
+  .log-tabla input, .log-tabla select { padding: 5px 7px; font-size: 13px; }
+  .log-tabla td { vertical-align: middle; }
+  .log-tabla .cant { width: 70px; min-width: 60px; }
+  .log-tabla select { min-width: 140px; }
+  .log-tabla input:not(.cant) { min-width: 120px; }
+  .modal.ancho.muy-ancho { width: min(1160px, 100%); }
+  .log-tabla tr.alquilado td { background: color-mix(in srgb, var(--media) 10%, transparent); }
+  .log-acciones { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+  #zonaImpresion { display: none; }
+
   /* Modal */
   .fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: grid; place-items: center; padding: 16px; z-index: 40; }
   .modal { background: var(--panel); border-radius: 14px; padding: 20px 22px; width: min(540px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; display: grid; gap: 12px; }
@@ -400,6 +418,16 @@
   .panel p { margin: 0; }
 
   @media print {
+    body.imprimiendo > *:not(#zonaImpresion) { display: none !important; }
+    body.imprimiendo #zonaImpresion { display: block; font: 11px/1.35 Arial, sans-serif; color: #000; }
+    #zonaImpresion h1 { font-size: 16px; margin: 0 0 2px; background: #356854; color: #fff; padding: 6px 8px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #zonaImpresion p { margin: 2px 0 8px; }
+    #zonaImpresion table { width: 100%; border-collapse: collapse; }
+    #zonaImpresion th { background: #356854; color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 10px; text-transform: none; letter-spacing: 0; }
+    #zonaImpresion th, #zonaImpresion td { border: 1px solid #999; padding: 4px 5px; white-space: normal; }
+    #zonaImpresion .caja { display: inline-block; width: 13px; height: 13px; border: 1.5px solid #000; }
+    #zonaImpresion .firmas { margin-top: 28px; display: flex; justify-content: space-between; gap: 20px; }
+    #zonaImpresion .firmas span { flex: 1; border-top: 1px solid #000; padding-top: 3px; text-align: center; }
     :root { --fondo: #ffffff; --panel: #ffffff; --texto: #111111; --suave: #555555; --borde: #dddddd; --columna: #f1f1f1; }
     body { background: #fff; }
     .lateral, .velo, .top, .no-print, #avisos, #carga { display: none !important; }
@@ -458,6 +486,9 @@
     .fila-personal input, .fila-personal select { font-size: 16px; background: var(--panel); }
     .fila-alquiler { grid-template-columns: 1fr 1fr; background: var(--fondo); border: 1px solid var(--borde); border-radius: 10px; padding: 8px; }
     .fila-alquiler [data-k=detalle] { grid-column: 1 / -1; }
+    .log-agregar { grid-template-columns: 1fr 1fr; }
+    .log-agregar .log-nombre { grid-column: 1 / -1; }
+    .log-agregar input, .log-agregar select { font-size: 16px; }
     .fila-alquiler input, .fila-alquiler select { font-size: 16px; background: var(--panel); }
     .modal { padding: 18px 16px; }
     .fondo { padding: 8px; }
