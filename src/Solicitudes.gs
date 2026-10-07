@@ -1,4 +1,5 @@
 /**
+ * Solo coordinación y admin (los colaboradores no ven esta sección).
  * Solicitudes internas: cualquiera pide una pieza (diseño, edición, pauta, contenido…);
  * la coordinación la asigna (se convierte en tarea) o la rechaza con motivo.
  */
@@ -16,6 +17,7 @@ function solicitudCliente_(s, nombres, tareas) {
 
 function listarSolicitudes(token) {
   const u = sesion_(token);
+  exigirGestor_(u);
   const nombres = mapaNombres_();
   const tareas = {};
   leerTabla_('Tareas').forEach(t => { tareas[t.id] = t; });
@@ -29,6 +31,7 @@ function listarSolicitudes(token) {
 
 function crearSolicitud(token, d) {
   const u = sesion_(token);
+  exigirGestor_(u);
   d = d || {};
   const s = {
     id: uuid_(),

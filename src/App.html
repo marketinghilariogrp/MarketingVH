@@ -206,8 +206,8 @@
       ['General', [['inicio', 'Inicio'], ['notificaciones', 'Notificaciones'], ['calendario', 'Calendario']]],
       ['Operación', [
         ['tareas', g ? 'Producción' : 'Mis tareas'],
-        ['historico', 'Histórico de tareas'],
-        ['solicitudes', 'Solicitudes'],
+        g && ['historico', 'Histórico de tareas'],
+        g && ['solicitudes', 'Solicitudes'],
         ['eventos', 'Eventos y rotación'],
         (g || S.cfg.marcaHoras) && ['asistencia', g ? 'Horas y sobretiempo' : 'Mi horario']
       ]],

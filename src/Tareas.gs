@@ -222,6 +222,7 @@ function eliminarTarea(token, id) {
  */
 function listarHistorico(token, desde, hasta, usuarioId) {
   const u = sesion_(token);
+  exigirGestor_(u);
   if (!esFecha_(desde) || !esFecha_(hasta)) throw new Error('Rango de fechas no válido.');
   if (!esGestor_(u)) usuarioId = u.id;
   const cfg = config_();
