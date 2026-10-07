@@ -86,6 +86,11 @@ function setup() {
     props.setProperty('MIGRACION', '2');
     console.log('Migración 2 aplicada: equipo actual, marcas, horario, redes sociales.');
   }
+  if (Number(props.getProperty('MIGRACION') || 0) < 3) {
+    migracion3_();
+    props.setProperty('MIGRACION', '3');
+    console.log('Migración 3 aplicada: fuente de pauta CA-Huacachina del Norte (Vyc).');
+  }
 
   console.log('Archivo de datos: ' + ss.getUrl());
   if (pinAdmin) {
@@ -161,6 +166,18 @@ function migracion2_() {
   invalidar_('config');
   invalidar_('usuarios');
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'pautaDiaria').forEach(t => ScriptApp.deleteTrigger(t));
+}
+
+/** Primera fuente de pauta: reporte diario de Meta Ads de CA-Huacachina del Norte (campañas «v&c» → Vyc). */
+function migracion3_() {
+  const url = 'https://docs.google.com/spreadsheets/d/1B4LrnDae5aEynziX17fw7EBnO2gVMRHcyUbZXyElVrc/edit';
+  conLock_(() => {
+    if (leerTabla_('Fuentes_pauta').some(f => idDeUrl_(f.url) === idDeUrl_(url))) return;
+    agregarFila_('Fuentes_pauta', { id: uuid_(), marca: 'Vyc', nombre: 'Meta Ads · CA-Huacachina del Norte', url: url,
+      hoja: 'Diario', activo: 'SI', creado: ahora_(), ultima_sync: '', estado_sync: '', filas: '0' });
+    log_('sistema', 'migracion', '3', 'Fuente de pauta CA-Huacachina del Norte');
+  });
+  try { sincronizarPauta_(); } catch (e) { console.log('No se pudo leer la fuente todavía: ' + e.message); }
 }
 
 /** Crea la hoja si falta, o agrega al final las columnas nuevas del ESQUEMA. */

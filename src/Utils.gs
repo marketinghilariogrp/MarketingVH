@@ -224,12 +224,13 @@ function num_(v) {
   if (typeof v === 'number') return v;
   const s = String(v == null ? '' : v).replace(/[^\d.,-]/g, '');
   if (!s) return 0;
-  // «1.234,56» o «1,234.56» o «1234,56»
+  // «1,316» y «1.234.567» son miles; «13.32», «1,316.50», «1.316,50» y «13,5» llevan decimales.
   const coma = s.lastIndexOf(',');
   const punto = s.lastIndexOf('.');
-  let limpio = s;
-  if (coma > punto) limpio = s.replace(/\./g, '').replace(',', '.');
-  else limpio = s.replace(/,/g, '');
+  let limpio;
+  if (coma >= 0 && punto >= 0) limpio = coma > punto ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  else if (coma >= 0) limpio = /^-?\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, '') : s.replace(',', '.');
+  else limpio = /^-?\d{1,3}(\.\d{3}){2,}$/.test(s) ? s.replace(/\./g, '') : s;
   const n = Number(limpio);
   return isNaN(n) ? 0 : n;
 }

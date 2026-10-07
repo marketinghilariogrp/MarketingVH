@@ -95,9 +95,10 @@ function marcaDesdeTexto_(texto, marcas) {
 
 function leerFuente_(fuente, marcas) {
   const ss = SpreadsheetApp.openByUrl(fuente.url);
+  // Sin pestaña indicada se usa «Diario» (una fila por campaña y día) si existe; si no, la primera.
   const hojas = fuente.hoja === '*' ? ss.getSheets()
     : fuente.hoja ? fuente.hoja.split(',').map(n => ss.getSheetByName(n.trim())).filter(Boolean)
-      : [ss.getSheets()[0]];
+      : [ss.getSheetByName('Diario') || ss.getSheets()[0]];
   if (!hojas.length) throw new Error('No se encontró la pestaña «' + fuente.hoja + '».');
   const filas = [];
   hojas.forEach(sh => {
