@@ -11,5 +11,9 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
   `colaborador` (8 personas: audiovisual, diseño gráfico, CM, trafficker).
 - Reglas: permisos y cálculos siempre en el servidor; lecturas con un solo getValues() por hoja;
   escrituras y log_ dentro de conLock_; nunca borrar filas; reglas editables en la hoja Config.
-- Publicar: `clasp push` y luego `clasp deploy -i <ID>` para mantener la misma URL.
+- Publicar: `clasp push` y luego
+  `clasp update-deployment AKfycbxC0JaVmHVuQJ78YXGwEpIAYHhY-v7x3nQzhRLDbi5bvK-P_76Bq81SKrnqGNoIHyWQ -d "<descripción>"`
+  para mantener la misma URL:
+  https://script.google.com/macros/s/AKfycbxC0JaVmHVuQJ78YXGwEpIAYHhY-v7x3nQzhRLDbi5bvK-P_76Bq81SKrnqGNoIHyWQ/exec
+- Ojo: `clasp create`/`clone` sobrescriben `src/appsscript.json`; revisar que siga en America/Lima.
 - Verificar sintaxis antes de subir: concatenar `src/*.gs` y pasar `node --check`.
