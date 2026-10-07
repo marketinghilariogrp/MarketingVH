@@ -1,0 +1,139 @@
+<script>
+  /* ---------- Contenido: parrillas por marca + agenda de publicaciones, grabaciones y entregables ---------- */
+
+  VISTAS.contenido = {
+    titulo: 'Contenido y campañas',
+    async pintar() {
+      const desde = sumarDias(S.hoy, -30);
+      const hasta = sumarDias(S.hoy, 45);
+      const [parrillas, agenda] = await Promise.all([api('listarParrillas'), api('listarAgenda', desde, hasta)]);
+      if (S.vista !== 'contenido') return;
+      const atrasados = agenda.filter(a => a.estado === 'pendiente' && a.fecha < S.hoy);
+      const proximos = agenda.filter(a => a.fecha >= S.hoy && a.estado !== 'cancelado');
+      const porMarca = {};
+      parrillas.forEach(p => (porMarca[p.marca] = porMarca[p.marca] || []).push(p));
+      const filaAgenda = a => `<li class="${a.fecha < S.hoy && a.estado === 'pendiente' ? 'atrasado' : ''}">
+        <span class="fecha-chip">${diaSemana(a.fecha)}<b>${a.fecha.slice(8)}</b></span>
+        <div><b>${esc(a.titulo)}</b> <span class="etiqueta ${claseAgenda(a.tipo)}">${esc(a.tipo)}</span>
+          <small>${[fmtFecha(a.fecha) + (a.hora ? ' ' + a.hora : ''), a.marca, a.campana, a.responsable].filter(Boolean).map(esc).join(' · ')}</small></div>
+        <div class="acciones">
+          ${a.estado === 'hecho' ? '<span class="estado e-hecho">Hecho</span>' : ''}
+          ${a.marcable && a.estado === 'pendiente' ? `<button class="btn mini ok" data-hecho="${esc(a.id)}">Hecho</button>` : ''}
+          ${a.editable ? `<button class="btn mini fantasma" data-ag="${esc(a.id)}">Editar</button>` : ''}
+        </div></li>`;
+
+      $('#vista').innerHTML = `
+        <div class="rejilla">
+          <section class="card">
+            <div class="cab-card"><h3>Parrillas de contenido</h3>${esGestor() ? '<button class="btn mini" id="bParrilla">+ Vincular parrilla</button>' : ''}</div>
+            <p class="sub">Enlaces a los Google Sheets de parrillas de cada marca.</p>
+            ${Object.keys(porMarca).length ? Object.keys(porMarca).sort().map(m => `<h4>${esc(m)}</h4>
+              <div class="enlaces">${porMarca[m].map(p => `<span class="enlace">
+                <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.nombre)} ↗</a>
+                ${esGestor() ? `<button class="btn-ico" data-parrilla="${esc(p.id)}" aria-label="Editar">✎</button>` : ''}</span>`).join('')}</div>`).join('')
+              : '<p class="vacio">Aún no hay parrillas vinculadas.</p>'}
+          </section>
+          <section class="card">
+            <div class="cab-card"><h3>No ejecutados <span class="cuenta">${atrasados.length}</span></h3></div>
+            <p class="sub">Publicaciones, grabaciones o entregables con fecha pasada que siguen pendientes.</p>
+            ${atrasados.length ? `<ul class="lista agenda">${atrasados.map(filaAgenda).join('')}</ul>` : '<p class="vacio">Nada atrasado. 👏</p>'}
+          </section>
+          <section class="card span2">
+            <div class="cab-card"><h3>Agenda de contenido · próximos 45 días</h3>${esGestor() ? '<button class="btn mini primario" id="bAgendaC">+ Agregar</button>' : ''}</div>
+            ${proximos.length ? `<ul class="lista agenda">${proximos.map(filaAgenda).join('')}</ul>` : '<p class="vacio">No hay nada agendado.</p>'}
+          </section>
+        </div>`;
+
+      if (esGestor()) {
+        $('#bParrilla').onclick = () => formParrilla(null);
+        $('#bAgendaC').onclick = () => formAgenda(null, S.hoy);
+      }
+      $('#vista').onclick = e => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.dataset.hecho) marcarAgenda(b.dataset.hecho, 'hecho');
+        if (b.dataset.ag) formAgenda(agenda.find(a => a.id === b.dataset.ag));
+        if (b.dataset.parrilla) formParrilla(parrillas.find(p => p.id === b.dataset.parrilla));
+      };
+    }
+  };
+
+  function formParrilla(p) {
+    const x = p || {};
+    modal(p ? 'Editar parrilla' : 'Vincular parrilla', `
+      <div class="dos">
+        <label>Marca<select name="marca" required>${opciones(S.cfg.marcas, x.marca, 'Elegir…')}</select></label>
+        <label>Nombre<input name="nombre" maxlength="120" required value="${esc(x.nombre)}" placeholder="Ej.: Parrilla octubre"></label>
+      </div>
+      <label>Enlace del Google Sheet<input name="url" type="url" required value="${esc(x.url)}" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
+      ${p ? '<label class="check"><input type="checkbox" name="quitar"> Quitar de la lista</label>' : ''}`,
+      async d => {
+        if (p) { d.id = p.id; d.activo = d.quitar !== 'on'; }
+        await api('guardarParrilla', d);
+        aviso('Parrilla guardada');
+        repintar();
+      });
+  }
+
+  /* ---------- Pauta Meta Ads ---------- */
+
+  VISTAS.pauta = {
+    titulo: 'Pauta Meta Ads',
+    async pintar() {
+      const fecha = S.fechaPauta || S.hoy;
+      const d = await api('getPauta', fecha);
+      if (S.vista !== 'pauta') return;
+      const m = S.cfg.moneda + ' ';
+      const cuentas = d.cuentas.map(c => {
+        const camp = d.campanas.filter(x => x.cuenta_id === c.id).sort((a, b) => b.inversion - a.inversion);
+        const sum = k => camp.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+        const resultados = sum('leads') + sum('mensajes');
+        const tendencia = d.tendencia.filter(t => t.cuenta_id === c.id).sort((a, b) => a.fecha.localeCompare(b.fecha));
+        return { c, camp, inversion: sum('inversion'), leads: sum('leads'), mensajes: sum('mensajes'), alcance: sum('alcance'),
+          clics: sum('clics_enlace'), resultados, activas: camp.filter(x => x.estado === 'ACTIVE').length, tendencia };
+      });
+      const maxInv = Math.max(1, ...d.tendencia.map(t => t.inversion));
+
+      $('#vista').innerHTML = `
+        <div class="toolbar">
+          <div class="controles"><label class="en-linea">Fecha <input type="date" id="fFechaP" value="${fecha}" max="${S.hoy}"></label></div>
+          ${esAdmin() && d.configurado ? '<button class="btn" id="bActualizarP">↻ Actualizar ahora desde Meta</button>' : ''}
+        </div>
+        ${d.configurado ? '' : `<section class="card aviso-card">
+          <h3>Falta conectar Meta Ads</h3>
+          <p>El reporte diario (corte 6:00 p. m.) ya está programado, pero falta el token de acceso de Meta.
+          El administrador debe agregarlo en Apps Script → Configuración del proyecto → Propiedades del script → <code>META_TOKEN</code>.</p>
+        </section>`}
+        ${d.alertas.length ? `<section class="card"><h3>Revisar</h3><ul class="alertas">${d.alertas.map(a => `<li class="media"><span class="punto"></span>${esc(a)}</li>`).join('')}</ul></section>` : ''}
+        <div class="kpis">${cuentas.map(x => `<div class="kpi"><span class="kpi-v">${m}${fmtNum(x.inversion, 2)}</span>
+          <span class="kpi-k">${esc(x.c.nombre)}</span><small>${x.resultados ? fmtNum(x.resultados) + ' resultados · ' + m + fmtNum(x.inversion / x.resultados, 2) + ' c/u' : 'Sin resultados'}</small></div>`).join('')}</div>
+        ${cuentas.map(x => `<section class="card sin-pad">
+          <div class="cab-card pad"><h3>${esc(x.c.nombre)} <small class="sub">act_${esc(x.c.id)} · ${x.activas} campañas activas</small></h3>
+            <div class="mini-tendencia" title="Inversión últimos 14 días">${x.tendencia.map(t =>
+              `<i style="height:${Math.max(4, t.inversion / maxInv * 100)}%" title="${fmtFecha(t.fecha)}: ${m}${fmtNum(t.inversion, 2)}"></i>`).join('')}</div></div>
+          <div class="tabla-caja plana"><table>
+            <thead><tr><th>Campaña</th><th>Estado</th><th class="num">Inversión</th><th class="num">Alcance</th><th class="num">Impresiones</th>
+              <th class="num">Clics enlace</th><th class="num">CTR</th><th class="num">Leads</th><th class="num">Mensajes</th><th class="num">Costo/resultado</th></tr></thead>
+            <tbody>${x.camp.map(c => {
+              const res = Number(c.leads) + Number(c.mensajes);
+              return `<tr><td class="ancho">${esc(c.campana)}</td><td><span class="estado ${c.estado === 'ACTIVE' ? 'e-realizado' : 'e-cancelado'}">${c.estado === 'ACTIVE' ? 'Activa' : 'Inactiva'}</span></td>
+                <td class="num">${m}${fmtNum(c.inversion, 2)}</td><td class="num">${fmtNum(c.alcance)}</td><td class="num">${fmtNum(c.impresiones)}</td>
+                <td class="num">${fmtNum(c.clics_enlace)}</td><td class="num">${fmtNum(c.ctr, 2)}%</td><td class="num">${fmtNum(c.leads)}</td>
+                <td class="num">${fmtNum(c.mensajes)}</td><td class="num">${res ? m + fmtNum(c.inversion / res, 2) : '—'}</td></tr>`;
+            }).join('') || '<tr><td colspan="10" class="vacio">Sin datos para esta fecha.</td></tr>'}</tbody>
+          </table></div>
+        </section>`).join('')}`;
+
+      $('#fFechaP').onchange = e => { S.fechaPauta = e.target.value; repintar(); };
+      if ($('#bActualizarP')) $('#bActualizarP').onclick = async e => {
+        e.target.disabled = true;
+        try {
+          const r = await api('actualizarPautaAhora', fecha);
+          aviso(`Actualizado: ${r.filas} campañas`);
+          r.errores.forEach(x => aviso(x, 'error'));
+          repintar();
+        } catch (err) { aviso(err.message, 'error'); e.target.disabled = false; }
+      };
+    }
+  };
+</script>

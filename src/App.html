@@ -1,18 +1,49 @@
 <script>
-  // Estado de la interfaz. Los permisos y cálculos los decide siempre el servidor;
-  // aquí solo se pinta lo que el servidor devuelve.
-  const S = { token: null, u: null, cfg: {}, usuarios: [], tareas: [], hoy: '', vista: 'tablero', filtro: '', verCanceladas: false };
+  // Núcleo de la interfaz: estado, llamadas al servidor, componentes comunes y la barra lateral.
+  // Los permisos y cálculos los decide siempre el servidor; aquí solo se pinta lo que devuelve.
+  const S = { token: null, u: null, cfg: {}, usuarios: [], tareas: [], hoy: '', vista: 'inicio', filtro: '', filtroMarca: '', verCanceladas: false };
+  const VISTAS = {};
 
-  const ROL_TXT = { admin: 'Administrador', coordinador: 'Coordinación', colaborador: 'Colaborador' };
+  const ROL_TXT = { admin: 'Administrador', coordinador: 'Coordinación', colaborador: 'Colaborador', practicante: 'Practicante' };
   const PRIO_TXT = { alta: 'Alta', media: 'Media', baja: 'Baja' };
-  const COLUMNAS = [['pendiente', 'Pendiente'], ['en_progreso', 'En progreso'], ['revision', 'En revisión'], ['aprobada', 'Aprobada']];
+  const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const MES_MIN = '2026-01';
+  const MES_MAX = '2027-12';
+
+  const ICONOS = {
+    inicio: 'M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z',
+    calendario: 'M4 5h16v16H4zM4 9h16M8 3v4M16 3v4',
+    tareas: 'M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9',
+    solicitudes: 'M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z',
+    eventos: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+    horas: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+    contenido: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
+    pauta: 'M3 3v18h18M7 15l4-4 3 3 6-6',
+    equipo: 'M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6',
+    usuarios: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+    cuenta: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
+    salir: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+    menu: 'M3 6h18M3 12h18M3 18h18'
+  };
 
   const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const icono = n => `<svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path d="${ICONOS[n]}"/></svg>`;
   const iniciales = n => esc(String(n || '?').split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase());
   const fmtFecha = s => { if (!s) return ''; const [y, m, d] = s.slice(0, 10).split('-'); return `${d}/${m}/${y}`; };
+  const fmtNum = (v, dec = 0) => Number(v || 0).toLocaleString('es-PE', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  const diaSemana = f => DIAS[(new Date(f + 'T12:00:00').getDay() + 6) % 7];
+  const mesTexto = m => `${MESES[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
+  const sumarMes = (m, n) => { const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const sumarDias = (f, n) => { const d = new Date(f + 'T12:00:00'); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const esGestor = () => S.u && (S.u.rol === 'admin' || S.u.rol === 'coordinador');
-  const estaVencida = t => t.vence && t.vence < S.hoy && !['aprobada', 'cancelada'].includes(t.estado);
+  const esAdmin = () => S.u && S.u.rol === 'admin';
+  const nombreDe = id => (S.usuarios.find(u => u.id === id) || {}).nombre || '—';
+  const opciones = (lista, sel, vacio) => (vacio !== undefined ? `<option value="">${esc(vacio)}</option>` : '') +
+    lista.map(o => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(t)}</option>`; }).join('');
+  const opcionesPersonas = (sel, vacio) => opciones(S.usuarios.map(u => [u.id, u.nombre + (u.area ? ' · ' + u.area : '')]), sel, vacio);
 
   function guardarToken(t) { try { t ? sessionStorage.setItem('vh_token', t) : sessionStorage.removeItem('vh_token'); } catch (e) {} }
   function leerToken() { try { return sessionStorage.getItem('vh_token'); } catch (e) { return null; } }
@@ -45,40 +76,66 @@
     el.className = 'aviso' + (tipo === 'error' ? ' error' : '');
     el.textContent = texto;
     $('#avisos').appendChild(el);
-    setTimeout(() => el.remove(), tipo === 'error' ? 6000 : 3000);
+    setTimeout(() => el.remove(), tipo === 'error' ? 6000 : 3500);
   }
 
-  function modal(titulo, cuerpo, alEnviar, textoBoton = 'Guardar', conCancelar = true) {
+  /**
+   * Ventana modal. alEnviar(datos, form) se ejecuta al enviar; si es null, el botón solo cierra.
+   * Devuelve { fondo, form, cerrar } para enganchar eventos del contenido.
+   */
+  function modal(titulo, cuerpo, alEnviar, textoBoton = 'Guardar', conCancelar = true, ancho) {
     const fondo = document.createElement('div');
     fondo.className = 'fondo';
-    fondo.innerHTML = `<form class="modal" novalidate>
-        <h3>${esc(titulo)}</h3>${cuerpo}<p class="error"></p>
-        <div class="pie">${conCancelar ? '<button type="button" class="btn fantasma" data-cerrar>Cancelar</button>' : ''}
-          <button class="btn primario" type="submit">${esc(textoBoton)}</button></div>
+    fondo.innerHTML = `<form class="modal${ancho ? ' ancho' : ''}" novalidate>
+        <div class="modal-cab"><h3>${esc(titulo)}</h3><button type="button" class="btn-ico" data-cerrar aria-label="Cerrar">×</button></div>
+        ${cuerpo}<p class="error"></p>
+        <div class="pie">${conCancelar && alEnviar ? '<button type="button" class="btn fantasma" data-cerrar>Cancelar</button>' : ''}
+          <button class="btn primario" type="submit">${esc(alEnviar ? textoBoton : 'Cerrar')}</button></div>
       </form>`;
     document.body.appendChild(fondo);
-    const f = $('form', fondo);
+    const form = $('form', fondo);
     const cerrar = () => fondo.remove();
-    fondo.addEventListener('click', e => { if (e.target === fondo || e.target.hasAttribute('data-cerrar')) cerrar(); });
-    f.onsubmit = async e => {
+    fondo.addEventListener('click', e => { if (e.target === fondo || e.target.closest('[data-cerrar]')) cerrar(); });
+    form.onsubmit = async e => {
       e.preventDefault();
-      if (!f.reportValidity()) return;
-      const btn = $('[type=submit]', f);
+      if (!alEnviar) return cerrar();
+      if (!form.reportValidity()) return;
+      const btn = $('[type=submit]', form);
       btn.disabled = true;
-      try { await alEnviar(Object.fromEntries(new FormData(f))); cerrar(); }
-      catch (err) { $('.error', f).textContent = err.message; btn.disabled = false; }
+      try { await alEnviar(Object.fromEntries(new FormData(form)), form); cerrar(); }
+      catch (err) { $('.error', form).textContent = err.message; btn.disabled = false; }
     };
-    const primero = $('input, select, textarea', f);
-    if (primero) primero.focus();
+    const primero = $('input:not([type=hidden]), select, textarea', form);
+    if (primero && alEnviar) primero.focus();
+    return { fondo, form, cerrar };
   }
 
   function confirmar(texto, boton) {
     return new Promise(ok => modal('Confirmar', `<p>${esc(texto)}</p>`, async () => ok(true), boton));
   }
 
-  function mostrarPin(nombre, pin) {
-    modal('PIN de acceso', `<p>Comparte este PIN con <b>${esc(nombre)}</b> de forma privada. No se volverá a mostrar.</p>
-      <p class="pin">${esc(pin)}</p>`, async () => {}, 'Listo', false);
+  /** Barras horizontales simples: lista de { k, v }. */
+  function barras(lista, opts = {}) {
+    if (!lista.length) return `<p class="vacio">${esc(opts.vacio || 'Sin datos todavía')}</p>`;
+    const max = Math.max(...lista.map(x => x.v), 1);
+    return `<div class="barras">${lista.map(x => `
+      <div class="barra-fila${x.clase ? ' ' + x.clase : ''}" title="${esc(x.k)}: ${esc(x.v)}">
+        <span class="barra-k">${esc(x.k)}</span>
+        <span class="barra-pista"><span class="barra-v" style="width:${Math.max(2, x.v / max * 100)}%"></span></span>
+        <span class="barra-n">${esc(opts.fmt ? opts.fmt(x.v) : x.v)}${x.extra ? ' <small>' + esc(x.extra) + '</small>' : ''}</span>
+      </div>`).join('')}</div>`;
+  }
+
+  /** Selector de mes ‹ Octubre 2026 › dentro de los límites del calendario. */
+  function navMes(mes) {
+    return `<div class="nav-mes">
+      <button type="button" class="btn-ico" data-mes="-1" ${mes <= MES_MIN ? 'disabled' : ''} aria-label="Mes anterior">‹</button>
+      <strong>${mesTexto(mes)}</strong>
+      <button type="button" class="btn-ico" data-mes="1" ${mes >= MES_MAX ? 'disabled' : ''} aria-label="Mes siguiente">›</button>
+    </div>`;
+  }
+  function enlazarNavMes(cont, mes, alCambiar) {
+    $$('[data-mes]', cont).forEach(b => { b.onclick = () => alCambiar(sumarMes(mes, Number(b.dataset.mes))); });
   }
 
   /* ---------- Login ---------- */
@@ -125,261 +182,91 @@
 
   async function iniciar() {
     const r = await api('getInicio');
-    Object.assign(S, { u: r.usuario, cfg: r.cfg, usuarios: r.usuarios, tareas: r.tareas, hoy: r.hoy, vista: 'tablero', filtro: '' });
+    Object.assign(S, { u: r.usuario, cfg: r.cfg, usuarios: r.usuarios, tareas: r.tareas, hoy: r.hoy, filtro: '' });
     pintarApp();
   }
 
-  async function refrescar() {
-    try {
-      const r = await api('listarTareas');
-      S.tareas = r.tareas;
-      S.hoy = r.hoy;
-      pintarApp();
-    } catch (e) { aviso(e.message, 'error'); }
+  async function recargarTareas() {
+    const r = await api('listarTareas');
+    S.tareas = r.tareas;
+    S.hoy = r.hoy;
   }
 
-  /* ---------- Estructura ---------- */
+  /* ---------- Barra lateral y navegación ---------- */
+
+  function menu() {
+    const r = S.u.rol;
+    const g = esGestor();
+    return [
+      ['General', [['inicio', 'Inicio'], ['calendario', 'Calendario']]],
+      ['Operación', [
+        ['tareas', g ? 'Producción' : 'Mis tareas'],
+        ['solicitudes', 'Solicitudes'],
+        r !== 'practicante' && ['eventos', 'Eventos y rotación'],
+        ['horas', g ? 'Horas y carga' : 'Mis horas']
+      ]],
+      ['Marketing', [
+        r !== 'practicante' && ['contenido', 'Contenido'],
+        g && ['pauta', 'Pauta Meta Ads']
+      ]],
+      ['Administración', [g && ['equipo', 'Equipo'], r === 'admin' && ['usuarios', 'Usuarios']]]
+    ].map(([grupo, items]) => [grupo, items.filter(Boolean)]).filter(([, items]) => items.length);
+  }
 
   function pintarApp() {
-    const nav = [['tablero', esGestor() ? 'Tablero' : 'Mis tareas']];
-    if (esGestor()) nav.push(['equipo', 'Equipo']);
-    if (S.u.rol === 'admin') nav.push(['usuarios', 'Usuarios']);
-    nav.push(['cuenta', 'Mi cuenta']);
-
+    const m = menu();
+    const permitidas = m.flatMap(([, it]) => it.map(x => x[0])).concat('cuenta');
+    if (!permitidas.includes(S.vista)) S.vista = 'inicio';
     $('#app').innerHTML = `
-      <header class="barra">
-        <div class="marca"><span class="logo">VH</span><strong>MarketingVH</strong></div>
-        <nav>${nav.map(([k, t]) => `<button class="nav ${S.vista === k ? 'activo' : ''}" data-vista="${k}">${t}</button>`).join('')}</nav>
-        <div class="yo"><span>${esc(S.u.nombre)}<small>${ROL_TXT[S.u.rol]}</small></span>
-          <button class="btn fantasma" id="bSalir">Salir</button></div>
-      </header>
-      <main id="vista"></main>`;
-    $('.barra nav').onclick = e => {
+      <div class="layout">
+        <aside class="lateral" id="lateral">
+          <div class="marca"><span class="logo">VH</span><div><strong>MarketingVH</strong><small>VH Holding</small></div></div>
+          <nav>${m.map(([grupo, items]) => `<p class="grupo">${grupo}</p>` +
+            items.map(([k, t]) => `<button class="nav" data-vista="${k}">${icono(k)}<span>${t}</span></button>`).join('')).join('')}
+          </nav>
+          <div class="pie-lateral">
+            <button class="nav" data-vista="cuenta">${icono('cuenta')}<span>${esc(S.u.nombre)}<small>${ROL_TXT[S.u.rol]}</small></span></button>
+            <button class="nav" id="bSalir">${icono('salir')}<span>Salir</span></button>
+          </div>
+        </aside>
+        <div class="velo" id="velo"></div>
+        <div class="principal">
+          <header class="top">
+            <button class="btn-ico solo-movil" id="bMenu" aria-label="Menú">${icono('menu')}</button>
+            <h1 id="tituloVista"></h1>
+          </header>
+          <main id="vista"></main>
+        </div>
+      </div>`;
+    $('#lateral nav').onclick = $('.pie-lateral').onclick = e => {
       const b = e.target.closest('[data-vista]');
-      if (b) { S.vista = b.dataset.vista; pintarApp(); }
+      if (b) irA(b.dataset.vista);
     };
     $('#bSalir').onclick = () => cerrarSesion(false);
-    ({ tablero: pintarTablero, equipo: pintarEquipo, usuarios: pintarUsuarios, cuenta: pintarCuenta })[S.vista]();
+    $('#bMenu').onclick = () => document.body.classList.add('menu-abierto');
+    $('#velo').onclick = () => document.body.classList.remove('menu-abierto');
+    irA(S.vista);
   }
 
-  /* ---------- Tablero ---------- */
-
-  function tarjeta(t) {
-    const vencida = estaVencida(t);
-    return `<article class="tarjeta p-${esc(t.prioridad)}${vencida ? ' vencida' : ''}">
-        <div class="meta"><span class="chip p-${esc(t.prioridad)}">${PRIO_TXT[t.prioridad] || ''}</span>
-          ${t.vence ? `<span class="fecha">${vencida ? 'Vencida · ' : 'Vence '}${fmtFecha(t.vence)}</span>` : ''}</div>
-        <h4>${esc(t.titulo)}</h4>
-        ${t.descripcion ? `<p class="desc">${esc(t.descripcion)}</p>` : ''}
-        ${t.nota ? `<p class="nota"><b>Devuelta:</b> ${esc(t.nota)}</p>` : ''}
-        ${esGestor() ? `<p class="persona"><span class="avatar">${iniciales(t.responsable)}</span>${esc(t.responsable)}</p>` : ''}
-        ${t.estado === 'aprobada' && t.completada ? `<p class="persona">Aprobada el ${fmtFecha(t.completada)}</p>` : ''}
-        <div class="acciones">
-          ${t.acciones.map(a => `<button class="btn mini${a.a === 'aprobada' ? ' ok' : ''}${a.a === 'cancelada' ? ' peligro' : ''}" data-id="${esc(t.id)}" data-accion="${esc(a.a)}">${esc(a.etiqueta)}</button>`).join('')}
-          ${t.editable ? `<button class="btn mini fantasma" data-id="${esc(t.id)}" data-accion="editar">Editar</button>` : ''}
-        </div>
-      </article>`;
-  }
-
-  function pintarTablero() {
-    let tareas = S.tareas;
-    if (S.filtro) tareas = tareas.filter(t => t.usuario_id === S.filtro);
-    const cols = COLUMNAS.slice();
-    if (S.verCanceladas) cols.push(['cancelada', 'Canceladas']);
-
-    $('#vista').innerHTML = `
-      <div class="toolbar">
-        <h2>${esGestor() ? 'Tablero de tareas' : 'Mis tareas'}</h2>
-        <div class="controles">
-          ${esGestor() ? `
-            <select id="fPersona" aria-label="Filtrar por persona"><option value="">Todo el equipo</option>
-              ${S.usuarios.map(x => `<option value="${esc(x.id)}" ${S.filtro === x.id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select>
-            <label class="check"><input type="checkbox" id="fCanc" ${S.verCanceladas ? 'checked' : ''}> Canceladas</label>
-            <button class="btn primario" id="bNueva">+ Nueva tarea</button>` : ''}
-          <button class="btn" id="bRefrescar" title="Actualizar">↻ Actualizar</button>
-        </div>
-      </div>
-      <div class="kanban">${cols.map(([e, titulo]) => {
-        const lista = tareas.filter(t => t.estado === e);
-        return `<section class="columna"><h3>${titulo}<span class="cuenta">${lista.length}</span></h3>
-          ${lista.map(tarjeta).join('') || '<p class="vacio">Sin tareas</p>'}</section>`;
-      }).join('')}</div>`;
-
-    $('#bRefrescar').onclick = refrescar;
-    if (esGestor()) {
-      $('#fPersona').onchange = e => { S.filtro = e.target.value; pintarTablero(); };
-      $('#fCanc').onchange = e => { S.verCanceladas = e.target.checked; pintarTablero(); };
-      $('#bNueva').onclick = () => formTarea(null);
-    }
-    $('.kanban').onclick = async e => {
-      const b = e.target.closest('button[data-accion]');
-      if (!b) return;
-      const t = S.tareas.find(x => x.id === b.dataset.id);
-      if (!t) return;
-      if (b.dataset.accion === 'editar') return formTarea(t);
-      const acc = t.acciones.find(a => a.a === b.dataset.accion);
-      if (!acc) return;
-      if (acc.nota) return formDevolver(t, acc);
-      if (acc.confirmar) await confirmar(`¿${acc.etiqueta} la tarea «${t.titulo}»?`, acc.etiqueta);
-      mover(t, acc.a, '');
-    };
-  }
-
-  function reemplazar(t) {
-    const i = S.tareas.findIndex(x => x.id === t.id);
-    if (i >= 0) S.tareas[i] = t; else S.tareas.unshift(t);
-  }
-
-  async function mover(t, estado, nota) {
-    try {
-      reemplazar(await api('moverTarea', t.id, estado, nota));
-      aviso('Tarea actualizada');
-      pintarTablero();
-    } catch (e) { aviso(e.message, 'error'); }
-  }
-
-  function formDevolver(t, acc) {
-    modal(`Devolver «${t.titulo}»`, `
-      <label>¿Qué hay que corregir?<textarea name="nota" rows="4" maxlength="1000" required></textarea></label>`,
-      async d => {
-        reemplazar(await api('moverTarea', t.id, acc.a, d.nota));
-        aviso('Tarea devuelta');
-        pintarTablero();
-      }, 'Devolver');
-  }
-
-  function formTarea(t) {
-    const x = t || { prioridad: 'media', usuario_id: S.filtro };
-    modal(t ? 'Editar tarea' : 'Nueva tarea', `
-      <label>Título<input name="titulo" maxlength="200" required value="${esc(x.titulo)}"></label>
-      <label>Descripción<textarea name="descripcion" rows="3" maxlength="2000">${esc(x.descripcion)}</textarea></label>
-      <div class="dos">
-        <label>Responsable<select name="usuario_id" required><option value="">Elegir…</option>
-          ${S.usuarios.map(u => `<option value="${esc(u.id)}" ${u.id === x.usuario_id ? 'selected' : ''}>${esc(u.nombre)}${u.area ? ' · ' + esc(u.area) : ''}</option>`).join('')}</select></label>
-        <label>Prioridad<select name="prioridad">
-          ${['alta', 'media', 'baja'].map(p => `<option value="${p}" ${p === x.prioridad ? 'selected' : ''}>${PRIO_TXT[p]}</option>`).join('')}</select></label>
-      </div>
-      <label>Fecha límite<input type="date" name="vence" required value="${esc(x.vence)}"></label>`,
-      async d => {
-        if (t) d.id = t.id;
-        reemplazar(await api(t ? 'editarTarea' : 'crearTarea', d));
-        aviso(t ? 'Tarea actualizada' : 'Tarea creada');
-        pintarTablero();
-      }, t ? 'Guardar' : 'Crear tarea');
-  }
-
-  /* ---------- Equipo (carga por persona) ---------- */
-
-  function pintarEquipo() {
-    const filas = S.usuarios.map(u => {
-      const ts = S.tareas.filter(t => t.usuario_id === u.id);
-      const n = e => ts.filter(t => t.estado === e).length;
-      return { u, p: n('pendiente'), e: n('en_progreso'), r: n('revision'), a: n('aprobada'), v: ts.filter(estaVencida).length };
+  function irA(vista) {
+    S.vista = vista;
+    document.body.classList.remove('menu-abierto');
+    $$('.lateral .nav').forEach(b => b.classList.toggle('activo', b.dataset.vista === vista));
+    const v = VISTAS[vista];
+    $('#tituloVista').textContent = typeof v.titulo === 'function' ? v.titulo() : v.titulo;
+    $('#vista').innerHTML = '<p class="inicio">Cargando…</p>';
+    $('#vista').onclick = $('#vista').onchange = null;
+    Promise.resolve(v.pintar()).catch(e => {
+      if (S.vista === vista) $('#vista').innerHTML = `<p class="inicio error">${esc(e.message)}</p>`;
     });
-    $('#vista').innerHTML = `
-      <div class="toolbar"><h2>Carga del equipo</h2>
-        <div class="controles"><button class="btn" id="bRefrescar">↻ Actualizar</button></div></div>
-      <div class="tabla-caja"><table>
-        <thead><tr><th>Persona</th><th>Área</th><th class="num">Pendientes</th><th class="num">En progreso</th>
-          <th class="num">En revisión</th><th class="num">Vencidas</th><th class="num">Aprobadas (30 días)</th></tr></thead>
-        <tbody>${filas.map(f => `<tr class="clic" data-id="${esc(f.u.id)}">
-          <td><span class="persona"><span class="avatar">${iniciales(f.u.nombre)}</span>${esc(f.u.nombre)}</span></td>
-          <td>${esc(f.u.area)}</td><td class="num">${f.p}</td><td class="num">${f.e}</td><td class="num">${f.r}</td>
-          <td class="num ${f.v ? 'alerta' : ''}">${f.v}</td><td class="num">${f.a}</td></tr>`).join('')}</tbody>
-      </table></div>`;
-    $('#bRefrescar').onclick = refrescar;
-    $('tbody').onclick = e => {
-      const tr = e.target.closest('tr[data-id]');
-      if (tr) { S.filtro = tr.dataset.id; S.vista = 'tablero'; pintarApp(); }
-    };
   }
 
-  /* ---------- Usuarios (solo admin) ---------- */
+  /** Vuelve a pintar la vista actual (tras guardar algo). */
+  function repintar() { irA(S.vista); }
 
-  async function pintarUsuarios() {
-    $('#vista').innerHTML = '<p class="inicio">Cargando usuarios…</p>';
-    let lista;
-    try { lista = await api('listarUsuarios'); } catch (e) { return aviso(e.message, 'error'); }
-    if (S.vista !== 'usuarios') return;
-    $('#vista').innerHTML = `
-      <div class="toolbar"><h2>Usuarios</h2>
-        <div class="controles"><button class="btn primario" id="bNuevoU">+ Nuevo usuario</button></div></div>
-      <div class="tabla-caja"><table>
-        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Área</th><th class="num">Jornada</th><th>Estado</th><th></th></tr></thead>
-        <tbody>${lista.map(u => `<tr class="${u.activo ? '' : 'inactivo'}">
-          <td>${esc(u.nombre)}</td><td>${esc(u.correo)}</td><td><span class="etiqueta">${ROL_TXT[u.rol] || esc(u.rol)}</span></td>
-          <td>${esc(u.area)}</td><td class="num">${u.jornada_horas} h</td><td>${u.activo ? 'Activo' : 'Inactivo'}</td>
-          <td><button class="btn mini" data-editar="${esc(u.id)}">Editar</button>
-              <button class="btn mini fantasma" data-pin="${esc(u.id)}">Nuevo PIN</button></td></tr>`).join('')}</tbody>
-      </table></div>`;
-    $('#bNuevoU').onclick = () => formUsuario(null);
-    $('tbody').onclick = async e => {
-      const ed = e.target.closest('[data-editar]');
-      const pin = e.target.closest('[data-pin]');
-      if (ed) formUsuario(lista.find(u => u.id === ed.dataset.editar));
-      if (pin) {
-        const u = lista.find(x => x.id === pin.dataset.pin);
-        await confirmar(`¿Generar un PIN nuevo para ${u.nombre}? El anterior dejará de funcionar.`, 'Generar PIN');
-        try { mostrarPin(u.nombre, (await api('resetearPin', u.id)).pin); } catch (err) { aviso(err.message, 'error'); }
-      }
-    };
-  }
-
-  function formUsuario(u) {
-    const x = u || { rol: 'colaborador', jornada_horas: S.cfg.jornadaHoras, activo: true };
-    const areas = S.cfg.areas.includes(x.area) || !x.area ? S.cfg.areas : S.cfg.areas.concat(x.area);
-    modal(u ? 'Editar usuario' : 'Nuevo usuario', `
-      <label>Nombre<input name="nombre" maxlength="100" required value="${esc(x.nombre)}"></label>
-      <label>Correo (con el que ingresará)<input name="correo" type="email" required value="${esc(x.correo)}"></label>
-      <div class="dos">
-        <label>Rol<select name="rol">${Object.keys(ROL_TXT).map(r => `<option value="${r}" ${r === x.rol ? 'selected' : ''}>${ROL_TXT[r]}</option>`).join('')}</select></label>
-        <label>Área<select name="area">${areas.map(a => `<option ${a === x.area ? 'selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
-      </div>
-      <label>Horas de jornada<input name="jornada_horas" type="number" min="1" max="24" step="0.5" required value="${esc(x.jornada_horas)}"></label>
-      ${u ? `<label class="check"><input type="checkbox" name="activo" ${x.activo ? 'checked' : ''}> Usuario activo</label>` : ''}`,
-      async d => {
-        if (u) { d.id = u.id; d.activo = d.activo === 'on'; }
-        const r = await api('guardarUsuario', d);
-        aviso(u ? 'Usuario actualizado' : 'Usuario creado');
-        const g = await api('getInicio');
-        S.usuarios = g.usuarios;
-        pintarUsuarios();
-        if (r.pin) mostrarPin(r.usuario.nombre, r.pin);
-      }, u ? 'Guardar' : 'Crear usuario');
-  }
-
-  /* ---------- Mi cuenta ---------- */
-
-  function pintarCuenta() {
-    $('#vista').innerHTML = `
-      <div class="toolbar"><h2>Mi cuenta</h2></div>
-      <form class="panel" id="fPin">
-        <p style="margin:0">${esc(S.u.nombre)} · ${esc(S.u.correo)}<br><small>${ROL_TXT[S.u.rol]} · ${esc(S.u.area)}</small></p>
-        <label>PIN actual<input name="actual" type="password" inputmode="numeric" autocomplete="current-password" required></label>
-        <label>PIN nuevo (4 a 8 números)<input name="nuevo" type="password" inputmode="numeric" pattern="\\d{4,8}" maxlength="8"
-          title="Entre 4 y 8 números" autocomplete="new-password" required></label>
-        <label>Repite el PIN nuevo<input name="repetir" type="password" inputmode="numeric" autocomplete="new-password" required></label>
-        <p class="error" id="pinError"></p>
-        <button class="btn primario" type="submit">Cambiar PIN</button>
-      </form>`;
-    $('#fPin').onsubmit = async e => {
-      e.preventDefault();
-      const d = Object.fromEntries(new FormData(e.target));
-      if (d.nuevo !== d.repetir) { $('#pinError').textContent = 'Los PIN nuevos no coinciden.'; return; }
-      try {
-        await api('cambiarMiPin', d.actual, d.nuevo);
-        e.target.reset();
-        $('#pinError').textContent = '';
-        aviso('PIN actualizado');
-      } catch (err) { $('#pinError').textContent = err.message; }
-    };
-  }
-
-  /* ---------- Arranque ---------- */
-
-  (async function () {
+  function arrancar() {
     S.token = leerToken();
     if (!S.token) return vistaLogin();
-    try { await iniciar(); } catch (e) { if (S.token) cerrarSesion(true); }
-  })();
+    iniciar().catch(() => { if (S.token) cerrarSesion(true); });
+  }
 </script>

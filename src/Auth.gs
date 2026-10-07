@@ -3,7 +3,7 @@
  * El PIN se guarda como hash y la sesión es un token temporal en CacheService.
  */
 
-const ROLES = ['admin', 'coordinador', 'colaborador'];
+const ROLES = ['admin', 'coordinador', 'colaborador', 'practicante'];
 const DURACION_SESION = 21600; // 6 horas, máximo que permite CacheService
 const MAX_INTENTOS = 5;
 
@@ -32,7 +32,7 @@ function login(correo, pin) {
   const intentos = Number(cache.get(claveIntentos) || 0);
   if (intentos >= MAX_INTENTOS) throw new Error('Demasiados intentos fallidos. Espera 15 minutos.');
 
-  const u = usuarios_().find(x => x.correo.toLowerCase() === correo && x.activo === 'SI');
+  const u = usuarios_().find(x => x.correo && x.pin_hash && x.correo.toLowerCase() === correo && x.activo === 'SI');
   if (!u || hashPin_(u.id, pin) !== u.pin_hash) {
     cache.put(claveIntentos, String(intentos + 1), 900);
     throw new Error('Correo o PIN incorrecto.');

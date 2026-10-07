@@ -16,4 +16,8 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
   para mantener la misma URL:
   https://script.google.com/macros/s/AKfycbxC0JaVmHVuQJ78YXGwEpIAYHhY-v7x3nQzhRLDbi5bvK-P_76Bq81SKrnqGNoIHyWQ/exec
 - Ojo: `clasp create`/`clone` sobrescriben `src/appsscript.json`; revisar que siga en America/Lima.
-- Verificar sintaxis antes de subir: concatenar `src/*.gs` y pasar `node --check`.
+- Verificar sintaxis antes de subir: concatenar `src/*.gs` y pasar `node --check` (igual con los `<script>` de `src/*.html`).
+- Columnas nuevas: agregarlas SIEMPRE al final de su lista en `ESQUEMA` (Utils.gs); `setup()` las migra.
+- Interfaz: `App.html` es el núcleo (estado `S`, `api`, `modal`, `barras`, barra lateral); cada `Vista*.html` registra
+  sus pantallas en `VISTAS`. Rol extra `practicante` (Renzo, Abigail).
+- Meta Ads: token en la propiedad del script `META_TOKEN` (lo pone el usuario, nunca Claude). Cuentas en Config.meta_cuentas.

@@ -1,0 +1,91 @@
+<script>
+  /* ---------- Usuarios (solo admin) ---------- */
+
+  function mostrarPin(nombre, pin) {
+    modal('PIN de acceso', `<p>Comparte este PIN con <b>${esc(nombre)}</b> de forma privada. No se volverá a mostrar.</p>
+      <p class="pin">${esc(pin)}</p>`, null);
+  }
+
+  VISTAS.usuarios = {
+    titulo: 'Usuarios y accesos',
+    async pintar() {
+      const lista = await api('listarUsuarios');
+      if (S.vista !== 'usuarios') return;
+      $('#vista').innerHTML = `
+        <div class="toolbar"><p class="sub">Las personas sin correo aparecen en eventos y horas, pero no pueden ingresar. Agrégales un correo y genera su PIN.</p>
+          <button class="btn primario" id="bNuevoU">+ Nuevo usuario</button></div>
+        <div class="tabla-caja"><table>
+          <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Área</th><th class="num">Jornada</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${lista.map(u => `<tr class="${u.activo ? '' : 'inactivo'}">
+            <td>${esc(u.nombre)}</td><td>${u.correo ? esc(u.correo) : '<span class="sub">Sin acceso</span>'}</td>
+            <td><span class="etiqueta">${ROL_TXT[u.rol] || esc(u.rol)}</span></td>
+            <td>${esc(u.area)}</td><td class="num">${u.jornada_horas} h</td><td>${u.activo ? 'Activo' : 'Inactivo'}</td>
+            <td><button class="btn mini" data-editar="${esc(u.id)}">Editar</button>
+                ${u.correo ? `<button class="btn mini fantasma" data-pin="${esc(u.id)}">Nuevo PIN</button>` : ''}</td></tr>`).join('')}</tbody>
+        </table></div>`;
+      $('#bNuevoU').onclick = () => formUsuario(null);
+      $('tbody').onclick = async e => {
+        const ed = e.target.closest('[data-editar]');
+        const pin = e.target.closest('[data-pin]');
+        if (ed) formUsuario(lista.find(u => u.id === ed.dataset.editar));
+        if (pin) {
+          const u = lista.find(x => x.id === pin.dataset.pin);
+          await confirmar(`¿Generar un PIN nuevo para ${u.nombre}? El anterior dejará de funcionar.`, 'Generar PIN');
+          try { mostrarPin(u.nombre, (await api('resetearPin', u.id)).pin); } catch (err) { aviso(err.message, 'error'); }
+        }
+      };
+    }
+  };
+
+  function formUsuario(u) {
+    const x = u || { rol: 'colaborador', jornada_horas: S.cfg.jornadaHoras, activo: true };
+    const areas = S.cfg.areas.includes(x.area) || !x.area ? S.cfg.areas : S.cfg.areas.concat(x.area);
+    modal(u ? 'Editar usuario' : 'Nuevo usuario', `
+      <label>Nombre<input name="nombre" maxlength="100" required value="${esc(x.nombre)}"></label>
+      <label>Correo (con el que ingresará; déjalo vacío si no necesita acceso)<input name="correo" type="email" value="${esc(x.correo)}"></label>
+      <div class="dos">
+        <label>Rol<select name="rol">${opciones(Object.entries(ROL_TXT), x.rol)}</select></label>
+        <label>Área<select name="area">${opciones(areas, x.area, '—')}</select></label>
+      </div>
+      <label>Horas de jornada<input name="jornada_horas" type="number" min="1" max="24" step="0.5" required value="${esc(x.jornada_horas)}"></label>
+      ${u ? `<label class="check"><input type="checkbox" name="activo" ${x.activo ? 'checked' : ''}> Usuario activo</label>` : ''}`,
+      async d => {
+        if (u) { d.id = u.id; d.activo = d.activo === 'on'; }
+        const r = await api('guardarUsuario', d);
+        aviso(u ? 'Usuario actualizado' : 'Usuario creado');
+        S.usuarios = (await api('getInicio')).usuarios;
+        repintar();
+        if (r.pin) mostrarPin(r.usuario.nombre, r.pin);
+        else if (u && !u.correo && r.usuario.correo) aviso('Ahora genera su PIN con «Nuevo PIN».');
+      }, u ? 'Guardar' : 'Crear usuario');
+  }
+
+  /* ---------- Mi cuenta ---------- */
+
+  VISTAS.cuenta = {
+    titulo: 'Mi cuenta',
+    pintar() {
+      $('#vista').innerHTML = `
+        <form class="card panel" id="fPin">
+          <p>${esc(S.u.nombre)} · ${esc(S.u.correo)}<br><small class="sub">${ROL_TXT[S.u.rol]}${S.u.area ? ' · ' + esc(S.u.area) : ''}</small></p>
+          <label>PIN actual<input name="actual" type="password" inputmode="numeric" autocomplete="current-password" required></label>
+          <label>PIN nuevo (4 a 8 números)<input name="nuevo" type="password" inputmode="numeric" pattern="\\d{4,8}" maxlength="8"
+            title="Entre 4 y 8 números" autocomplete="new-password" required></label>
+          <label>Repite el PIN nuevo<input name="repetir" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" required></label>
+          <p class="error" id="pinError"></p>
+          <button class="btn primario" type="submit">Cambiar PIN</button>
+        </form>`;
+      $('#fPin').onsubmit = async e => {
+        e.preventDefault();
+        const d = Object.fromEntries(new FormData(e.target));
+        if (d.nuevo !== d.repetir) { $('#pinError').textContent = 'Los PIN nuevos no coinciden.'; return; }
+        try {
+          await api('cambiarMiPin', d.actual, d.nuevo);
+          e.target.reset();
+          $('#pinError').textContent = '';
+          aviso('PIN actualizado');
+        } catch (err) { $('#pinError').textContent = err.message; }
+      };
+    }
+  };
+</script>

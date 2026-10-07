@@ -14,14 +14,25 @@ function include_(nombre) {
 function getInicio(token) {
   const u = sesion_(token);
   const cfg = config_();
+  const gestor = esGestor_(u);
   return {
     usuario: publico_(u),
     cfg: {
-      areas: String(cfg.areas || '').split(',').map(s => s.trim()).filter(String),
+      areas: lista_('areas'),
+      marcas: lista_('marcas'),
+      funciones: lista_('funciones'),
+      funcionesEvento: lista_('funciones_evento'),
+      tiposAgenda: lista_('tipos_agenda'),
       coordinadorPuedeAprobar: cfg.coordinador_puede_aprobar === 'SI',
-      jornadaHoras: Number(cfg.jornada_horas) || 8
+      jornadaHoras: Number(cfg.jornada_horas) || 8,
+      moneda: cfg.moneda || 'S/'
     },
-    usuarios: esGestor_(u) ? usuarios_().filter(x => x.activo === 'SI').map(publico_) : [],
+    // Todos ven nombres y áreas (para calendario y eventos); el correo solo lo ven los gestores.
+    usuarios: usuarios_().filter(x => x.activo === 'SI').map(x => {
+      const p = publico_(x);
+      if (!gestor) delete p.correo;
+      return p;
+    }),
     hoy: hoy_(),
     tareas: tareasPara_(u)
   };

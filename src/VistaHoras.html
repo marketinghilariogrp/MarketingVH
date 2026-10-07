@@ -1,0 +1,111 @@
+<script>
+  /* ---------- Horas: registro (practicantes y equipo) y carga laboral ---------- */
+
+  function rangoHoras(clave) {
+    const hoy = S.hoy;
+    const dow = (new Date(hoy + 'T12:00:00').getDay() + 6) % 7;
+    const mes = hoy.slice(0, 7);
+    const ant = sumarMes(mes, -1);
+    const finMes = m => sumarDias(sumarMes(m, 1) + '-01', -1);
+    return {
+      semana: [sumarDias(hoy, -dow), hoy],
+      mes: [mes + '-01', hoy],
+      anterior: [ant + '-01', finMes(ant)]
+    }[clave];
+  }
+
+  VISTAS.horas = {
+    titulo: () => esGestor() ? 'Horas y carga laboral' : 'Mis horas',
+    async pintar() {
+      const periodo = S.periodoHoras || 'semana';
+      const persona = esGestor() ? (S.personaHoras || '') : S.u.id;
+      const [desde, hasta] = rangoHoras(periodo);
+      const d = await api('listarHoras', desde, hasta, persona);
+      if (S.vista !== 'horas') return;
+      const total = d.registros.reduce((s, r) => s + r.horas, 0);
+      const yo = d.personas.find(p => p.usuario_id === (persona || S.u.id));
+      const usoClase = u => (u === null ? '' : u > 100 ? 'alto' : u < 60 ? 'bajo' : '');
+
+      $('#vista').innerHTML = `
+        <div class="rejilla-horas">
+          <form class="card" id="fHoras">
+            <h3>Registrar horas</h3>
+            ${esGestor() ? `<label>Persona<select name="usuario_id">${opcionesPersonas(S.u.id)}</select></label>` : ''}
+            <div class="tres">
+              <label>Fecha<input type="date" name="fecha" required value="${S.hoy}" max="${S.hoy}"></label>
+              <label>Inicio<input type="time" name="inicio" required></label>
+              <label>Fin<input type="time" name="fin" required></label>
+            </div>
+            <div class="dos">
+              <label>Función<select name="funcion" required>${opciones(S.cfg.funciones, '', 'Elegir…')}</select></label>
+              <label>Marca<select name="marca">${opciones(S.cfg.marcas, '', '—')}</select></label>
+            </div>
+            <label>¿Qué hiciste?<textarea name="descripcion" rows="2" maxlength="500" placeholder="Ej.: edición de reel para Nexo"></textarea></label>
+            <p class="error" id="horasError"></p>
+            <button class="btn primario" type="submit">Guardar registro</button>
+          </form>
+          <section class="card">
+            <div class="cab-card"><h3>Resumen</h3>
+              <div class="controles">
+                ${esGestor() ? `<select id="fPersonaH" aria-label="Persona">${opcionesPersonas(persona, 'Todo el equipo')}</select>` : ''}
+                <select id="fPeriodo" aria-label="Periodo">${opciones([['semana', 'Esta semana'], ['mes', 'Este mes'], ['anterior', 'Mes anterior']], periodo)}</select>
+              </div></div>
+            <p class="sub">${fmtFecha(desde)} al ${fmtFecha(hasta)} · ${d.diasHabiles} días laborables</p>
+            <div class="kpis mini">
+              <div class="kpi"><span class="kpi-v">${fmtNum(total, 1)}</span><span class="kpi-k">Horas registradas</span></div>
+              ${yo && persona ? `<div class="kpi"><span class="kpi-v">${fmtNum(yo.capacidad, 0)}</span><span class="kpi-k">Capacidad (jornada × días)</span></div>
+                <div class="kpi ${usoClase(yo.uso)}"><span class="kpi-v">${yo.uso === null ? '—' : yo.uso + '%'}</span><span class="kpi-k">Uso de capacidad</span></div>` : ''}
+            </div>
+            <h4>Por función</h4>
+            ${barras(d.porFuncion, { fmt: v => fmtNum(v, 1) + ' h', vacio: 'Sin horas en este periodo.' })}
+          </section>
+        </div>
+        ${esGestor() && !persona ? `<section class="card">
+          <h3>Carga por persona</h3>
+          <p class="sub">Uso = horas registradas ÷ (jornada × días laborables). Sobre 100% indica sobrecarga; bajo 60%, capacidad libre o falta registrar.</p>
+          <div class="tabla-caja plana"><table>
+            <thead><tr><th>Persona</th><th>Área</th><th class="num">Horas</th><th class="num">Capacidad</th><th>Uso</th></tr></thead>
+            <tbody>${d.personas.map(p => `<tr class="clic" data-p="${esc(p.usuario_id)}">
+              <td>${esc(p.nombre)}${p.rol === 'practicante' ? ' <span class="etiqueta">Practicante</span>' : ''}</td><td>${esc(p.area)}</td>
+              <td class="num">${fmtNum(p.horas, 1)}</td><td class="num">${fmtNum(p.capacidad, 0)}</td>
+              <td><span class="medidor"><span class="${usoClase(p.uso)}" style="width:${Math.min(100, p.uso || 0)}%"></span></span> ${p.uso === null ? '—' : p.uso + '%'}</td></tr>`).join('')}</tbody>
+          </table></div>
+        </section>` : ''}
+        <section class="card sin-pad">
+          <div class="tabla-caja plana"><table>
+            <thead><tr><th>Fecha</th>${esGestor() ? '<th>Persona</th>' : ''}<th>Horario</th><th class="num">Horas</th><th>Función</th><th>Marca</th><th>Detalle</th><th></th></tr></thead>
+            <tbody id="tRegistros">${d.registros.map(r => `<tr>
+              <td>${diaSemana(r.fecha)} ${fmtFecha(r.fecha)}</td>${esGestor() ? `<td>${esc(r.persona)}</td>` : ''}
+              <td>${esc(r.inicio)}–${esc(r.fin)}</td><td class="num">${fmtNum(r.horas, 2)}</td><td>${esc(r.funcion)}</td>
+              <td>${esc(r.marca)}</td><td class="ancho">${esc(r.descripcion)}</td>
+              <td>${r.anulable ? `<button class="btn mini fantasma" data-anular="${esc(r.id)}">Anular</button>` : ''}</td></tr>`).join('')
+              || '<tr><td colspan="8" class="vacio">Sin registros en este periodo.</td></tr>'}</tbody>
+          </table></div>
+        </section>`;
+
+      $('#fHoras').onsubmit = async e => {
+        e.preventDefault();
+        const f = e.target;
+        const datos = Object.fromEntries(new FormData(f));
+        const btn = $('[type=submit]', f);
+        btn.disabled = true;
+        try {
+          await api('registrarHoras', datos);
+          aviso('Horas registradas');
+          repintar();
+        } catch (err) { $('#horasError').textContent = err.message; btn.disabled = false; }
+      };
+      $('#fPeriodo').onchange = e => { S.periodoHoras = e.target.value; repintar(); };
+      if ($('#fPersonaH')) $('#fPersonaH').onchange = e => { S.personaHoras = e.target.value; repintar(); };
+      $('#vista').onclick = async e => {
+        const fila = e.target.closest('tr[data-p]');
+        if (fila) { S.personaHoras = fila.dataset.p; return repintar(); }
+        const b = e.target.closest('[data-anular]');
+        if (!b) return;
+        await confirmar('¿Anular este registro de horas?', 'Anular');
+        try { await api('anularHoras', b.dataset.anular); aviso('Registro anulado'); repintar(); }
+        catch (err) { aviso(err.message, 'error'); }
+      };
+    }
+  };
+</script>

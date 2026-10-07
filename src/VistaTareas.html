@@ -1,0 +1,230 @@
+<script>
+  /* ---------- Producción: tablero de tareas ---------- */
+
+  const COLUMNAS = [['pendiente', 'Pendiente'], ['en_progreso', 'En progreso'], ['revision', 'En revisión'], ['aprobada', 'Aprobada']];
+  const estaVencida = t => t.vence && t.vence < S.hoy && !['aprobada', 'cancelada'].includes(t.estado);
+
+  function tarjeta(t) {
+    const vencida = estaVencida(t);
+    const meta = [t.marca, t.tipo, t.campana].filter(Boolean).map(esc).join(' · ');
+    return `<article class="tarjeta p-${esc(t.prioridad)}${vencida ? ' vencida' : ''}">
+        <div class="meta"><span class="chip p-${esc(t.prioridad)}">${PRIO_TXT[t.prioridad] || ''}</span>
+          ${t.vence ? `<span class="fecha">${vencida ? 'Vencida · ' : 'Entrega '}${fmtFecha(t.vence)}</span>` : ''}</div>
+        <h4>${esc(t.titulo)}</h4>
+        ${meta ? `<p class="sub">${meta}</p>` : ''}
+        ${t.pieza && t.pieza !== t.titulo ? `<p class="sub">Pieza: ${esc(t.pieza)}</p>` : ''}
+        ${t.descripcion ? `<p class="desc">${esc(t.descripcion)}</p>` : ''}
+        ${t.nota ? `<p class="nota"><b>Devuelta:</b> ${esc(t.nota)}</p>` : ''}
+        ${esGestor() ? `<p class="persona"><span class="avatar">${iniciales(t.responsable)}</span>${esc(t.responsable)}</p>` : ''}
+        ${t.estado === 'aprobada' && t.completada ? `<p class="persona">Aprobada el ${fmtFecha(t.completada)}</p>` : ''}
+        <div class="acciones">
+          ${t.acciones.map(a => `<button class="btn mini${a.a === 'aprobada' ? ' ok' : ''}${a.a === 'cancelada' ? ' peligro' : ''}" data-id="${esc(t.id)}" data-accion="${esc(a.a)}">${esc(a.etiqueta)}</button>`).join('')}
+          ${t.editable ? `<button class="btn mini fantasma" data-id="${esc(t.id)}" data-accion="editar">Editar</button>` : ''}
+        </div>
+      </article>`;
+  }
+
+  function reemplazarTarea(t) {
+    const i = S.tareas.findIndex(x => x.id === t.id);
+    if (i >= 0) S.tareas[i] = t; else S.tareas.unshift(t);
+  }
+
+  VISTAS.tareas = {
+    titulo: () => esGestor() ? 'Producción del equipo' : 'Mis tareas',
+    pintar: pintarTablero
+  };
+
+  function pintarTablero() {
+    let tareas = S.tareas;
+    if (S.filtro) tareas = tareas.filter(t => t.usuario_id === S.filtro);
+    if (S.filtroMarca) tareas = tareas.filter(t => t.marca === S.filtroMarca);
+    const cols = COLUMNAS.slice();
+    if (S.verCanceladas) cols.push(['cancelada', 'Canceladas']);
+
+    $('#vista').innerHTML = `
+      <div class="toolbar">
+        <div class="controles">
+          ${esGestor() ? `<select id="fPersona" aria-label="Filtrar por persona">${opcionesPersonas(S.filtro, 'Todo el equipo')}</select>` : ''}
+          <select id="fMarca" aria-label="Filtrar por marca">${opciones(S.cfg.marcas, S.filtroMarca, 'Todas las marcas')}</select>
+          ${esGestor() ? `<label class="check"><input type="checkbox" id="fCanc" ${S.verCanceladas ? 'checked' : ''}> Canceladas</label>` : ''}
+        </div>
+        <div class="controles">
+          <button class="btn" id="bRefrescar">↻ Actualizar</button>
+          ${esGestor() ? '<button class="btn primario" id="bNueva">+ Nueva tarea</button>' : ''}
+        </div>
+      </div>
+      <div class="kanban">${cols.map(([e, titulo]) => {
+        const lista = tareas.filter(t => t.estado === e);
+        return `<section class="columna"><h3>${titulo}<span class="cuenta">${lista.length}</span></h3>
+          ${lista.map(tarjeta).join('') || '<p class="vacio">Sin tareas</p>'}</section>`;
+      }).join('')}</div>`;
+
+    $('#bRefrescar').onclick = async () => { try { await recargarTareas(); pintarTablero(); } catch (e) { aviso(e.message, 'error'); } };
+    $('#fMarca').onchange = e => { S.filtroMarca = e.target.value; pintarTablero(); };
+    if (esGestor()) {
+      $('#fPersona').onchange = e => { S.filtro = e.target.value; pintarTablero(); };
+      $('#fCanc').onchange = e => { S.verCanceladas = e.target.checked; pintarTablero(); };
+      $('#bNueva').onclick = () => formTarea(null);
+    }
+    $('.kanban').onclick = async e => {
+      const b = e.target.closest('button[data-accion]');
+      if (!b) return;
+      const t = S.tareas.find(x => x.id === b.dataset.id);
+      if (!t) return;
+      if (b.dataset.accion === 'editar') return formTarea(t);
+      const acc = t.acciones.find(a => a.a === b.dataset.accion);
+      if (!acc) return;
+      if (acc.nota) return formDevolver(t, acc);
+      if (acc.confirmar) await confirmar(`¿${acc.etiqueta} la tarea «${t.titulo}»?`, acc.etiqueta);
+      try {
+        reemplazarTarea(await api('moverTarea', t.id, acc.a, ''));
+        aviso('Tarea actualizada');
+        pintarTablero();
+      } catch (err) { aviso(err.message, 'error'); }
+    };
+  }
+
+  function formDevolver(t, acc) {
+    modal(`Devolver «${t.titulo}»`, `
+      <label>¿Qué hay que corregir?<textarea name="nota" rows="4" maxlength="1000" required></textarea></label>`,
+      async d => {
+        reemplazarTarea(await api('moverTarea', t.id, acc.a, d.nota));
+        aviso('Tarea devuelta');
+        pintarTablero();
+      }, 'Devolver');
+  }
+
+  function formTarea(t) {
+    const x = t || { prioridad: 'media', usuario_id: S.filtro, marca: S.filtroMarca };
+    modal(t ? 'Editar tarea' : 'Nueva tarea', `
+      <label>Título<input name="titulo" maxlength="200" required value="${esc(x.titulo)}"></label>
+      <div class="dos">
+        <label>Marca<select name="marca" required>${opciones(S.cfg.marcas, x.marca, 'Elegir…')}</select></label>
+        <label>Tipo de trabajo<select name="tipo" required>${opciones(S.cfg.funciones, x.tipo, 'Elegir…')}</select></label>
+      </div>
+      <div class="dos">
+        <label>Campaña<input name="campana" maxlength="120" value="${esc(x.campana)}" placeholder="Opcional"></label>
+        <label>Pieza solicitada<input name="pieza" maxlength="200" value="${esc(x.pieza)}" placeholder="Ej.: reel 30s, carrusel 5 láminas"></label>
+      </div>
+      <label>Descripción<textarea name="descripcion" rows="3" maxlength="2000">${esc(x.descripcion)}</textarea></label>
+      <div class="dos">
+        <label>Responsable<select name="usuario_id" required>${opcionesPersonas(x.usuario_id, 'Elegir…')}</select></label>
+        <label>Prioridad<select name="prioridad">${opciones(Object.entries(PRIO_TXT), x.prioridad)}</select></label>
+      </div>
+      <label>Fecha de entrega<input type="date" name="vence" required value="${esc(x.vence)}"></label>`,
+      async d => {
+        if (t) d.id = t.id;
+        reemplazarTarea(await api(t ? 'editarTarea' : 'crearTarea', d));
+        aviso(t ? 'Tarea actualizada' : 'Tarea creada');
+        if (S.vista === 'tareas') pintarTablero();
+      }, t ? 'Guardar' : 'Crear tarea');
+  }
+
+  /* ---------- Solicitudes internas ---------- */
+
+  const ESTADO_SOL = { nueva: 'Nueva', asignada: 'Asignada', rechazada: 'Rechazada' };
+  const ESTADO_TAREA = { pendiente: 'Pendiente', en_progreso: 'En progreso', revision: 'En revisión', aprobada: 'Aprobada', cancelada: 'Cancelada' };
+
+  VISTAS.solicitudes = {
+    titulo: 'Solicitudes internas',
+    async pintar() {
+      const lista = await api('listarSolicitudes');
+      if (S.vista !== 'solicitudes') return;
+      const solo = S.solFiltro || 'nueva';
+      const visibles = solo === 'todas' ? lista : lista.filter(s => s.estado === solo);
+      $('#vista').innerHTML = `
+        <div class="toolbar">
+          <div class="pestanas">${[['nueva', 'Nuevas'], ['asignada', 'Asignadas'], ['rechazada', 'Rechazadas'], ['todas', 'Todas']].map(([k, t]) =>
+            `<button class="pestana ${solo === k ? 'activo' : ''}" data-f="${k}">${t} <span class="cuenta">${k === 'todas' ? lista.length : lista.filter(s => s.estado === k).length}</span></button>`).join('')}</div>
+          <button class="btn primario" id="bNuevaSol">+ Nueva solicitud</button>
+        </div>
+        <p class="sub">${esGestor() ? 'Pedidos de diseño, edición, audiovisual, pauta y contenido de todo el equipo. Asígnalos para convertirlos en tareas.' : 'Tus pedidos al equipo. La coordinación los asigna a una persona.'}</p>
+        <div class="tabla-caja"><table>
+          <thead><tr><th>Solicitud</th><th>Marca</th><th>Tipo</th><th>Prioridad</th><th>Entrega</th>${esGestor() ? '<th>Pidió</th>' : ''}<th>Estado</th><th></th></tr></thead>
+          <tbody>${visibles.map(s => `<tr>
+            <td class="ancho"><b>${esc(s.titulo)}</b>${s.descripcion ? `<small>${esc(s.descripcion)}</small>` : ''}${s.nota ? `<small class="alerta">Motivo: ${esc(s.nota)}</small>` : ''}</td>
+            <td>${esc(s.marca)}</td><td>${esc(s.tipo)}</td><td><span class="chip p-${esc(s.prioridad)}">${PRIO_TXT[s.prioridad]}</span></td>
+            <td class="${s.estado === 'nueva' && s.fecha_entrega < S.hoy ? 'alerta' : ''}">${fmtFecha(s.fecha_entrega)}</td>
+            ${esGestor() ? `<td>${esc(s.solicitante)}</td>` : ''}
+            <td><span class="estado e-${esc(s.estado)}">${ESTADO_SOL[s.estado] || esc(s.estado)}</span>
+              ${s.tarea ? `<small>${esc(s.tarea.responsable)} · ${ESTADO_TAREA[s.tarea.estado] || ''}</small>` : ''}</td>
+            <td>${esGestor() && s.estado === 'nueva' ? `<button class="btn mini ok" data-asignar="${esc(s.id)}">Asignar</button>
+              <button class="btn mini fantasma" data-rechazar="${esc(s.id)}">Rechazar</button>` : ''}</td></tr>`).join('')
+            || `<tr><td colspan="8" class="vacio">No hay solicitudes ${solo === 'todas' ? '' : ESTADO_SOL[solo].toLowerCase() + 's'}.</td></tr>`}</tbody>
+        </table></div>`;
+      $$('[data-f]').forEach(b => { b.onclick = () => { S.solFiltro = b.dataset.f; repintar(); }; });
+      $('#bNuevaSol').onclick = formSolicitud;
+      $('tbody').onclick = e => {
+        const a = e.target.closest('[data-asignar]');
+        const r = e.target.closest('[data-rechazar]');
+        const id = (a && a.dataset.asignar) || (r && r.dataset.rechazar);
+        if (!id) return;
+        const s = lista.find(x => x.id === id);
+        if (a) modal(`Asignar «${s.titulo}»`, `
+          <p class="sub">${esc(s.marca)} · ${esc(s.tipo)} · entrega ${fmtFecha(s.fecha_entrega)}</p>
+          <label>Responsable<select name="usuario_id" required>${opcionesPersonas('', 'Elegir…')}</select></label>`,
+          async d => {
+            await api('asignarSolicitud', s.id, d.usuario_id);
+            await recargarTareas();
+            aviso('Solicitud asignada: ya está en el tablero');
+            repintar();
+          }, 'Asignar');
+        if (r) modal(`Rechazar «${s.titulo}»`, `<label>Motivo<textarea name="nota" rows="3" required></textarea></label>`,
+          async d => { await api('rechazarSolicitud', s.id, d.nota); aviso('Solicitud rechazada'); repintar(); }, 'Rechazar');
+      };
+    }
+  };
+
+  function formSolicitud() {
+    modal('Nueva solicitud', `
+      <label>¿Qué necesitas?<input name="titulo" maxlength="200" required placeholder="Ej.: flyer para evento del sábado"></label>
+      <div class="dos">
+        <label>Marca<select name="marca" required>${opciones(S.cfg.marcas, '', 'Elegir…')}</select></label>
+        <label>Tipo<select name="tipo" required>${opciones(S.cfg.funciones, '', 'Elegir…')}</select></label>
+      </div>
+      <div class="dos">
+        <label>Prioridad<select name="prioridad">${opciones(Object.entries(PRIO_TXT), 'media')}</select></label>
+        <label>Fecha de entrega<input type="date" name="fecha_entrega" required min="${S.hoy}"></label>
+      </div>
+      <label>Detalle (formatos, textos, referencias)<textarea name="descripcion" rows="4" maxlength="2000"></textarea></label>`,
+      async d => {
+        await api('crearSolicitud', d);
+        aviso('Solicitud enviada');
+        S.solFiltro = 'nueva';
+        if (S.vista === 'solicitudes') repintar();
+      }, 'Enviar solicitud');
+  }
+
+  /* ---------- Equipo: carga por persona ---------- */
+
+  VISTAS.equipo = {
+    titulo: 'Carga del equipo',
+    async pintar() {
+      await recargarTareas();
+      if (S.vista !== 'equipo') return;
+      const max = 8;
+      const filas = S.usuarios.filter(u => u.rol !== 'admin').map(u => {
+        const ts = S.tareas.filter(t => t.usuario_id === u.id);
+        const n = e => ts.filter(t => t.estado === e).length;
+        const abiertas = n('pendiente') + n('en_progreso') + n('revision');
+        return { u, p: n('pendiente'), e: n('en_progreso'), r: n('revision'), a: n('aprobada'), v: ts.filter(estaVencida).length, abiertas };
+      });
+      $('#vista').innerHTML = `
+        <p class="sub">Tareas por integrante. Haz clic en una fila para ver su tablero.</p>
+        <div class="tabla-caja"><table>
+          <thead><tr><th>Persona</th><th>Área</th><th class="num">Pendientes</th><th class="num">En progreso</th>
+            <th class="num">En revisión</th><th class="num">Vencidas</th><th class="num">Aprobadas (30 días)</th><th>Carga</th></tr></thead>
+          <tbody>${filas.map(f => `<tr class="clic" data-id="${esc(f.u.id)}">
+            <td><span class="persona"><span class="avatar">${iniciales(f.u.nombre)}</span>${esc(f.u.nombre)}</span></td>
+            <td>${esc(f.u.area)}${f.u.rol === 'practicante' ? ' <span class="etiqueta">Practicante</span>' : ''}</td>
+            <td class="num">${f.p}</td><td class="num">${f.e}</td><td class="num">${f.r}</td>
+            <td class="num ${f.v ? 'alerta' : ''}">${f.v}</td><td class="num">${f.a}</td>
+            <td><span class="medidor"><span style="width:${Math.min(100, f.abiertas / max * 100)}%" class="${f.abiertas > max ? 'alto' : ''}"></span></span></td></tr>`).join('')}</tbody>
+        </table></div>`;
+      $('tbody').onclick = e => {
+        const tr = e.target.closest('tr[data-id]');
+        if (tr) { S.filtro = tr.dataset.id; irA('tareas'); }
+      };
+    }
+  };
+</script>

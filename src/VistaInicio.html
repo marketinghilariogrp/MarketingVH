@@ -1,0 +1,53 @@
+<script>
+  /* ---------- Inicio: KPIs, alertas y resumen del mes ---------- */
+
+  VISTAS.inicio = {
+    titulo: 'Inicio',
+    async pintar() {
+      const d = await api('getDashboard');
+      if (S.vista !== 'inicio') return;
+      const g = esGestor();
+      const indiceClase = i => (i === null ? '' : i > 1.3 ? 'alto' : i < 0.7 ? 'bajo' : '');
+      $('#vista').innerHTML = `
+        <p class="saludo">Hola, <b>${esc(S.u.nombre.split(' ')[0])}</b> · ${diaSemana(d.hoy)} ${fmtFecha(d.hoy)}</p>
+        <div class="kpis">${d.kpis.map(k => `
+          <button class="kpi${k.tono === 'alerta' && k.valor ? ' alerta' : ''}" data-ir="${k.vista}">
+            <span class="kpi-v">${fmtNum(k.valor, k.valor % 1 ? 1 : 0)}</span><span class="kpi-k">${esc(k.etiqueta)}</span>
+          </button>`).join('')}
+        </div>
+        <div class="rejilla">
+          <section class="card span2">
+            <h3>Alertas <span class="cuenta">${d.alertas.length}</span></h3>
+            ${d.alertas.length ? `<ul class="alertas">${d.alertas.slice(0, 15).map(a => `
+              <li class="${a.nivel}" data-ir="${a.vista}"><span class="punto"></span>${esc(a.texto)}</li>`).join('')}</ul>
+              ${d.alertas.length > 15 ? `<p class="vacio">y ${d.alertas.length - 15} más…</p>` : ''}`
+              : '<p class="vacio">Todo en orden. No hay alertas.</p>'}
+          </section>
+          <section class="card">
+            <h3>Próximos eventos</h3>
+            ${d.proximos.length ? `<ul class="lista">${d.proximos.map(e => `
+              <li><span class="fecha-chip">${diaSemana(e.fecha)}<b>${e.fecha.slice(8)}</b></span>
+                <div><b>${esc(e.titulo)}</b> <span class="etiqueta">${esc(e.empresa)}</span>${e.hora ? ' · ' + esc(e.hora) : ''}
+                <small>${e.personal.length ? esc(e.personal.join(', ')) : '<span class="alerta">Sin personal asignado</span>'}</small></div></li>`).join('')}</ul>`
+              : '<p class="vacio">No hay eventos programados.</p>'}
+          </section>
+          <section class="card">
+            <h3>Horas por función · este mes</h3>
+            ${barras(d.horasPorFuncion, { fmt: v => fmtNum(v, 1) + ' h', vacio: 'Aún no hay horas registradas este mes.' })}
+          </section>
+          <section class="card">
+            <h3>Producción del mes</h3>
+            <p class="sub">Suma de pesos de tareas aprobadas (alta 3 · media 2 · baja 1)${d.cumplimiento !== null ? ` · <b>${d.cumplimiento}%</b> a tiempo` : ''}</p>
+            ${barras(d.produccion, { vacio: 'Aún no hay tareas aprobadas este mes.' })}
+          </section>
+          ${g ? `<section class="card">
+            <h3>Eventos por persona · este mes</h3>
+            <p class="sub">Índice de equidad: 1 = parejo; sobre 1.3 o bajo 0.7 se marca</p>
+            ${barras(d.eventosPorPersona.map(x => ({ k: x.nombre, v: x.eventos, extra: x.indice !== null ? '×' + x.indice : '', clase: indiceClase(x.indice) })),
+              { vacio: 'Sin eventos cubiertos este mes.' })}
+          </section>` : ''}
+        </div>`;
+      $('#vista').onclick = e => { const b = e.target.closest('[data-ir]'); if (b && VISTAS[b.dataset.ir]) irA(b.dataset.ir); };
+    }
+  };
+</script>

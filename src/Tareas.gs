@@ -56,17 +56,15 @@ function tareaCliente_(t, u, cfg, nombres) {
     vence: t.vence,
     completada: t.completada,
     nota: t.nota,
+    marca: t.marca,
+    campana: t.campana,
+    pieza: t.pieza,
+    tipo: t.tipo,
     acciones: (TRANSICIONES[t.estado] || [])
       .filter(tr => puede_(u, tr.quien, t, cfg))
       .map(tr => ({ a: tr.a, etiqueta: tr.etiqueta, nota: !!tr.nota, confirmar: !!tr.confirmar })),
     editable: esGestor_(u) && ['pendiente', 'en_progreso', 'revision'].indexOf(t.estado) >= 0
   };
-}
-
-function mapaNombres_() {
-  const m = {};
-  usuarios_().forEach(x => { m[x.id] = x.nombre; });
-  return m;
 }
 
 /** Tareas visibles para el usuario: abiertas + cerradas en los últimos 30 días. */
@@ -96,11 +94,15 @@ function validarTarea_(d) {
     descripcion: texto_(d.descripcion, 2000),
     usuario_id: texto_(d.usuario_id, 40),
     prioridad: texto_(d.prioridad, 10),
-    vence: texto_(d.vence, 10)
+    vence: texto_(d.vence, 10),
+    campana: texto_(d.campana, 120),
+    pieza: texto_(d.pieza, 200)
   };
   if (!datos.titulo) throw new Error('Escribe el título de la tarea.');
   if (PRIORIDADES.indexOf(datos.prioridad) < 0) throw new Error('Prioridad no válida.');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(datos.vence)) throw new Error('Elige la fecha límite.');
+  if (!esFecha_(datos.vence)) throw new Error('Elige la fecha límite.');
+  datos.marca = opcion_(d.marca, lista_('marcas'), 'Elige la marca.');
+  datos.tipo = opcion_(d.tipo, lista_('funciones'), 'Elige el tipo de trabajo.');
   const responsable = usuarios_().find(x => x.id === datos.usuario_id && x.activo === 'SI');
   if (!responsable) throw new Error('Elige a la persona responsable.');
   datos.peso = config_()['peso_' + datos.prioridad] || '1';
@@ -118,15 +120,21 @@ function crearTarea(token, d) {
   exigirGestor_(u);
   const datos = validarTarea_(d || {});
   return conLock_(() => {
-    const ahora = ahora_();
-    const t = Object.assign({
-      id: uuid_(), creada_por: u.id, estado: 'pendiente', creada: ahora,
-      completada: '', nota: '', actualizada: ahora
-    }, datos);
-    agregarFila_('Tareas', t);
-    log_(u.id, 'crear_tarea', t.id, t.titulo);
+    const t = crearTareaInterna_(u, datos, '');
     return tareaCliente_(t, u, config_(), mapaNombres_());
   });
+}
+
+/** Crea la fila de la tarea. Llamar dentro de conLock_ con datos ya validados. */
+function crearTareaInterna_(u, datos, solicitudId) {
+  const ahora = ahora_();
+  const t = Object.assign({
+    id: uuid_(), creada_por: u.id, estado: 'pendiente', creada: ahora,
+    completada: '', nota: '', actualizada: ahora, solicitud_id: solicitudId
+  }, datos);
+  agregarFila_('Tareas', t);
+  log_(u.id, 'crear_tarea', t.id, t.titulo);
+  return t;
 }
 
 function editarTarea(token, d) {

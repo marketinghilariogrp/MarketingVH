@@ -1,0 +1,274 @@
+<script>
+  /* ---------- Eventos y rotación del personal ---------- */
+
+  const ESTADO_EV = { programado: 'Programado', realizado: 'Realizado', cancelado: 'Cancelado' };
+  const mesActual = () => S.hoy.slice(0, 7);
+  const cacheEventos = {};
+
+  async function datosEventos(mes) {
+    const r = await api('listarEventos', mes);
+    cacheEventos[mes] = r;
+    return r;
+  }
+
+  function chipsPersonal(ev) {
+    if (!ev.personal.length) return `<span class="alerta">Sin personal</span>${ev.detalle ? ` <small>${esc(ev.detalle)}</small>` : ''}`;
+    return ev.personal.map(p => `<span class="chip-persona${p.usuario_id === S.u.id ? ' yo' : ''}${p.estado === 'ausente' ? ' ausente' : ''}"
+      title="${esc([p.funcion, p.zona, p.horario, p.estado === 'ausente' ? 'Ausente' : ''].filter(Boolean).join(' · '))}">
+      ${esc(p.nombre)} <small>${esc(p.funcion)}${p.zona ? ' · ' + esc(p.zona) : ''}${p.horario ? ' · ' + esc(p.horario) : ''}</small></span>`).join('');
+  }
+
+  VISTAS.eventos = {
+    titulo: 'Eventos y rotación del personal',
+    async pintar() {
+      const mes = S.mesEventos || mesActual();
+      const d = await datosEventos(mes);
+      if (S.vista !== 'eventos') return;
+      const verAnio = !!S.rotacionAnio;
+      const conteo = verAnio ? d.conteoAnio : d.conteoMes;
+      const indiceClase = i => (i === null ? '' : i > 1.3 ? 'alto' : i < 0.7 ? 'bajo' : '');
+      $('#vista').innerHTML = `
+        <div class="toolbar">
+          ${navMes(mes)}
+          ${esGestor() ? '<button class="btn primario" id="bNuevoEv">+ Nuevo evento</button>' : ''}
+        </div>
+        <div class="rejilla-ev">
+          <section class="card sin-pad">
+            <div class="tabla-caja plana"><table>
+              <thead><tr><th>Fecha</th><th>Evento</th><th>Personal</th><th>Estado</th>${esGestor() ? '<th></th>' : ''}</tr></thead>
+              <tbody>${d.eventos.map(ev => `<tr class="${ev.estado === 'cancelado' ? 'inactivo' : ''}">
+                <td><span class="fecha-chip">${diaSemana(ev.fecha)}<b>${ev.fecha.slice(8)}</b></span></td>
+                <td class="ancho"><b>${esc(ev.titulo)}</b> <span class="etiqueta">${esc(ev.empresa)}</span>
+                  <small>${[ev.hora_inicio && (ev.hora_inicio + (ev.hora_fin ? '–' + ev.hora_fin : '')), ev.lugar].filter(Boolean).map(esc).join(' · ')}</small></td>
+                <td class="personal">${chipsPersonal(ev)}</td>
+                <td><span class="estado e-${esc(ev.estado)}">${ESTADO_EV[ev.estado] || esc(ev.estado)}</span></td>
+                ${esGestor() ? `<td><button class="btn mini" data-editar="${esc(ev.id)}">Editar</button></td>` : ''}</tr>`).join('')
+                || '<tr><td colspan="5" class="vacio">No hay eventos este mes.</td></tr>'}</tbody>
+            </table></div>
+          </section>
+          <section class="card">
+            <div class="cab-card"><h3>Rotación</h3>
+              <div class="pestanas mini"><button class="pestana ${verAnio ? '' : 'activo'}" data-rot="">Mes</button>
+                <button class="pestana ${verAnio ? 'activo' : ''}" data-rot="1">Año ${mes.slice(0, 4)}</button></div></div>
+            <p class="sub">Eventos cubiertos por persona. Índice 1 = reparto parejo.</p>
+            ${barras(conteo.map(x => ({ k: x.nombre, v: x.eventos, extra: x.indice !== null ? '×' + x.indice : '', clase: indiceClase(x.indice) })),
+              { vacio: 'Sin eventos cubiertos.' })}
+          </section>
+        </div>`;
+      enlazarNavMes($('#vista'), mes, m => { S.mesEventos = m; repintar(); });
+      $$('[data-rot]').forEach(b => { b.onclick = () => { S.rotacionAnio = !!b.dataset.rot; repintar(); }; });
+      if (esGestor()) {
+        $('#bNuevoEv').onclick = () => formEvento(null, mes === mesActual() ? S.hoy : mes + '-01');
+        $('tbody').onclick = e => {
+          const b = e.target.closest('[data-editar]');
+          if (b) formEvento(d.eventos.find(x => x.id === b.dataset.editar));
+        };
+      }
+    }
+  };
+
+  function filaPersonal(p = {}) {
+    return `<div class="fila-personal">
+      <select data-k="usuario_id" aria-label="Persona">${opcionesPersonas(p.usuario_id, 'Persona…')}</select>
+      <select data-k="funcion" aria-label="Función">${opciones(S.cfg.funcionesEvento, p.funcion)}</select>
+      <input data-k="zona" placeholder="Zona / etapa" value="${esc(p.zona)}" maxlength="120">
+      <input data-k="horario" placeholder="Horario (ej. 8:00–14:00)" value="${esc(p.horario)}" maxlength="60">
+      <label class="check"><input type="checkbox" data-k="ausente" ${p.estado === 'ausente' ? 'checked' : ''}> Faltó</label>
+      <button type="button" class="btn-ico quitar" aria-label="Quitar">×</button>
+    </div>`;
+  }
+
+  function funcionSugerida(area) {
+    const a = String(area || '').toLowerCase();
+    const f = S.cfg.funcionesEvento;
+    if (a.includes('audiovisual') && f.includes('Audiovisual')) return 'Audiovisual';
+    if ((a.includes('community') || a.includes('social')) && f.includes('CM')) return 'CM';
+    return f.includes('Apoyo') ? 'Apoyo' : f[0];
+  }
+
+  /** Formulario de evento con su personal; muestra sugerencias según quién cubrió menos eventos en el mes. */
+  async function formEvento(ev, fecha) {
+    const x = ev || { fecha: fecha || S.hoy, estado: 'programado', personal: [] };
+    const { form } = modal(ev ? 'Editar evento' : 'Nuevo evento', `
+      <label>Nombre del evento<input name="titulo" maxlength="200" required value="${esc(x.titulo)}"></label>
+      <div class="tres">
+        <label>Fecha<input type="date" name="fecha" required value="${esc(x.fecha)}"></label>
+        <label>Inicio<input type="time" name="hora_inicio" value="${esc(x.hora_inicio)}"></label>
+        <label>Fin<input type="time" name="hora_fin" value="${esc(x.hora_fin)}"></label>
+      </div>
+      <div class="dos">
+        <label>Empresa / marca<select name="empresa" required>${opciones(S.cfg.marcas, x.empresa, 'Elegir…')}</select></label>
+        <label>Estado<select name="estado">${opciones(Object.entries(ESTADO_EV), x.estado)}</select></label>
+      </div>
+      <label>Lugar<input name="lugar" maxlength="200" value="${esc(x.lugar)}"></label>
+      <label>Detalle<textarea name="detalle" rows="2" maxlength="2000">${esc(x.detalle)}</textarea></label>
+      <div class="cab-card"><b>Personal del evento</b><button type="button" class="btn mini" id="bAgregarP">+ Agregar persona</button></div>
+      <div id="personal">${x.personal.map(filaPersonal).join('')}</div>
+      <div id="sugerencias" class="sugerencias"><small>Calculando sugerencias…</small></div>`,
+      async (d, f) => {
+        d.personal = $$('.fila-personal', f).map(fila => ({
+          usuario_id: $('[data-k=usuario_id]', fila).value,
+          funcion: $('[data-k=funcion]', fila).value,
+          zona: $('[data-k=zona]', fila).value,
+          horario: $('[data-k=horario]', fila).value,
+          estado: $('[data-k=ausente]', fila).checked ? 'ausente' : ''
+        }));
+        if (d.personal.some(p => !p.usuario_id)) throw new Error('Elige a la persona en cada fila o quita la fila vacía.');
+        if (ev) d.id = ev.id;
+        const r = await api('guardarEvento', d);
+        aviso(ev ? 'Evento actualizado' : 'Evento creado');
+        r.avisos.forEach(a => aviso('Atención: ' + a, 'error'));
+        delete cacheEventos[d.fecha.slice(0, 7)];
+        if (['eventos', 'calendario', 'inicio'].includes(S.vista)) repintar();
+      }, ev ? 'Guardar' : 'Crear evento', true, true);
+
+    const cont = $('#personal', form);
+    $('#bAgregarP', form).onclick = () => cont.insertAdjacentHTML('beforeend', filaPersonal({ funcion: S.cfg.funcionesEvento[0] }));
+    cont.onclick = e => { if (e.target.closest('.quitar')) e.target.closest('.fila-personal').remove(); };
+
+    // Sugerencias: personas activas (no practicantes) ordenadas por menos eventos en el mes.
+    const pintarSug = async () => {
+      const mes = ($('[name=fecha]', form).value || S.hoy).slice(0, 7);
+      let datos = cacheEventos[mes];
+      try { if (!datos) datos = await datosEventos(mes); } catch (e) { return; }
+      const cuenta = {};
+      datos.conteoMes.forEach(c => { cuenta[c.usuario_id] = c.eventos; });
+      const ya = $$('[data-k=usuario_id]', cont).map(s => s.value);
+      const lista = S.usuarios.filter(u => u.rol !== 'practicante' && u.rol !== 'admin' && !ya.includes(u.id))
+        .sort((a, b) => (cuenta[a.id] || 0) - (cuenta[b.id] || 0) || a.nombre.localeCompare(b.nombre)).slice(0, 8);
+      $('#sugerencias', form).innerHTML = lista.length ? `<small>Sugeridos (menos eventos en ${MESES[Number(mes.slice(5)) - 1].toLowerCase()}):</small>` +
+        lista.map(u => `<button type="button" class="chip-sug" data-u="${esc(u.id)}">${esc(u.nombre)} <small>${cuenta[u.id] || 0}</small></button>`).join('') : '';
+    };
+    $('#sugerencias', form).onclick = e => {
+      const b = e.target.closest('[data-u]');
+      if (!b) return;
+      const u = S.usuarios.find(x => x.id === b.dataset.u);
+      cont.insertAdjacentHTML('beforeend', filaPersonal({ usuario_id: u.id, funcion: funcionSugerida(u.area) }));
+      pintarSug();
+    };
+    cont.onchange = pintarSug;
+    $('[name=fecha]', form).onchange = pintarSug;
+    pintarSug();
+  }
+
+  /* ---------- Agenda (grabaciones, publicaciones, entregables…) ---------- */
+
+  function formAgenda(a, fecha) {
+    const x = a || { fecha: fecha || S.hoy, tipo: S.cfg.tiposAgenda[0] };
+    modal(a ? 'Editar en agenda' : 'Agregar a la agenda', `
+      <label>Título<input name="titulo" maxlength="200" required value="${esc(x.titulo)}"></label>
+      <div class="tres">
+        <label>Tipo<select name="tipo" required>${opciones(S.cfg.tiposAgenda, x.tipo)}</select></label>
+        <label>Fecha<input type="date" name="fecha" required value="${esc(x.fecha)}"></label>
+        <label>Hora<input type="time" name="hora" value="${esc(x.hora)}"></label>
+      </div>
+      <div class="dos">
+        <label>Marca<select name="marca">${opciones(S.cfg.marcas, x.marca, '—')}</select></label>
+        <label>Campaña<input name="campana" maxlength="120" value="${esc(x.campana)}"></label>
+      </div>
+      <label>Responsable<select name="responsable_id">${opcionesPersonas(x.responsable_id, '—')}</select></label>
+      <label>Detalle<textarea name="detalle" rows="2" maxlength="2000">${esc(x.detalle)}</textarea></label>`,
+      async d => {
+        if (a) d.id = a.id;
+        await api('guardarAgenda', d);
+        aviso('Agenda actualizada');
+        repintar();
+      }, a ? 'Guardar' : 'Agregar');
+  }
+
+  async function marcarAgenda(id, estado) {
+    try { await api('estadoAgenda', id, estado); aviso(estado === 'hecho' ? 'Marcado como hecho' : 'Actualizado'); repintar(); }
+    catch (e) { aviso(e.message, 'error'); }
+  }
+
+  /* ---------- Calendario mensual ---------- */
+
+  const claseAgenda = t => 'ag-' + String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '-');
+
+  VISTAS.calendario = {
+    titulo: 'Calendario',
+    async pintar() {
+      const mes = S.mesCal || mesActual();
+      const d = await api('getCalendario', mes);
+      if (S.vista !== 'calendario') return;
+      const porDia = {};
+      const add = (f, item) => (porDia[f] = porDia[f] || []).push(item);
+      d.eventos.forEach(e => add(e.fecha, { clase: 'ev' + (e.estado === 'cancelado' ? ' tachado' : ''), texto: e.titulo, orden: 0 }));
+      d.agenda.forEach(a => add(a.fecha, { clase: claseAgenda(a.tipo) + (a.estado !== 'pendiente' ? ' tachado' : ''), texto: a.tipo + ': ' + a.titulo, orden: 1 }));
+      d.tareas.forEach(t => add(t.vence, { clase: 'ta' + (t.estado === 'aprobada' ? ' tachado' : ''), texto: 'Entrega: ' + t.titulo, orden: 2 }));
+
+      const primero = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5)) - 1, 1);
+      const offset = (primero.getDay() + 6) % 7;
+      const diasMes = new Date(primero.getFullYear(), primero.getMonth() + 1, 0).getDate();
+      const celdas = [];
+      for (let i = 0; i < offset; i++) celdas.push('<div class="dia vacio-dia"></div>');
+      for (let n = 1; n <= diasMes; n++) {
+        const f = `${mes}-${String(n).padStart(2, '0')}`;
+        const items = (porDia[f] || []).sort((a, b) => a.orden - b.orden);
+        celdas.push(`<button class="dia${f === S.hoy ? ' hoy' : ''}${d.feriados.includes(f) ? ' feriado' : ''}" data-f="${f}">
+          <span class="num-dia">${n}</span>
+          ${items.slice(0, 3).map(it => `<span class="item ${it.clase}">${esc(it.texto)}</span>`).join('')}
+          ${items.length > 3 ? `<span class="mas">+${items.length - 3} más</span>` : ''}
+          ${items.length ? `<span class="puntos">${items.slice(0, 5).map(it => `<i class="${it.clase.split(' ')[0]}"></i>`).join('')}</span>` : ''}
+        </button>`);
+      }
+      $('#vista').innerHTML = `
+        <div class="toolbar">
+          ${navMes(mes)}
+          <div class="controles">
+            ${mes !== mesActual() ? '<button class="btn" id="bHoy">Hoy</button>' : ''}
+            ${esGestor() ? '<button class="btn" id="bAgenda">+ Agenda</button><button class="btn primario" id="bEvento">+ Evento</button>' : ''}
+          </div>
+        </div>
+        <div class="leyenda"><span><i class="ev"></i>Evento</span><span><i class="ta"></i>Entrega de tarea</span>
+          ${S.cfg.tiposAgenda.map(t => `<span><i class="${claseAgenda(t)}"></i>${esc(t)}</span>`).join('')}</div>
+        <div class="calendario">
+          ${DIAS.map(x => `<div class="cab-dia">${x}</div>`).join('')}
+          ${celdas.join('')}
+        </div>`;
+      enlazarNavMes($('#vista'), mes, m => { S.mesCal = m; repintar(); });
+      if ($('#bHoy')) $('#bHoy').onclick = () => { S.mesCal = mesActual(); repintar(); };
+      const fechaNueva = () => (mes === mesActual() ? S.hoy : mes + '-01');
+      if (esGestor()) {
+        $('#bEvento').onclick = () => formEvento(null, fechaNueva());
+        $('#bAgenda').onclick = () => formAgenda(null, fechaNueva());
+      }
+      $('.calendario').onclick = e => {
+        const b = e.target.closest('[data-f]');
+        if (b) detalleDia(b.dataset.f, d);
+      };
+    }
+  };
+
+  function detalleDia(f, d) {
+    const eventos = d.eventos.filter(e => e.fecha === f);
+    const agenda = d.agenda.filter(a => a.fecha === f);
+    const tareas = d.tareas.filter(t => t.vence === f);
+    const vacio = !eventos.length && !agenda.length && !tareas.length;
+    const { form, cerrar } = modal(`${diaSemana(f)} ${fmtFecha(f)}${d.feriados.includes(f) ? ' · Feriado' : ''}`, `
+      ${esGestor() ? `<div class="controles"><button type="button" class="btn mini primario" data-nuevo="evento">+ Evento</button>
+        <button type="button" class="btn mini" data-nuevo="agenda">+ Agenda</button></div>` : ''}
+      ${vacio ? '<p class="vacio">No hay nada agendado este día.</p>' : ''}
+      ${eventos.map(e => `<div class="item-dia ev">
+        <div class="cab-card"><b>${esc(e.titulo)}</b>${esGestor() ? `<button type="button" class="btn mini" data-ev="${esc(e.id)}">Editar</button>` : ''}</div>
+        <small>${[e.empresa, e.hora_inicio && (e.hora_inicio + (e.hora_fin ? '–' + e.hora_fin : '')), e.lugar, ESTADO_EV[e.estado]].filter(Boolean).map(esc).join(' · ')}</small>
+        <div class="personal">${chipsPersonal(e)}</div></div>`).join('')}
+      ${agenda.map(a => `<div class="item-dia ${claseAgenda(a.tipo)}">
+        <div class="cab-card"><b>${esc(a.tipo)}: ${esc(a.titulo)}</b><span class="estado e-${esc(a.estado)}">${esc(a.estado)}</span></div>
+        <small>${[a.hora, a.marca, a.campana, a.responsable].filter(Boolean).map(esc).join(' · ')}</small>
+        ${a.detalle ? `<small>${esc(a.detalle)}</small>` : ''}
+        <div class="acciones">${a.marcable && a.estado === 'pendiente' ? `<button type="button" class="btn mini ok" data-hecho="${esc(a.id)}">Marcar hecho</button>` : ''}
+          ${a.editable ? `<button type="button" class="btn mini" data-ag="${esc(a.id)}">Editar</button>` : ''}</div></div>`).join('')}
+      ${tareas.map(t => `<div class="item-dia ta"><b>Entrega: ${esc(t.titulo)}</b>
+        <small>${[t.marca, t.responsable, ESTADO_TAREA[t.estado]].filter(Boolean).map(esc).join(' · ')}</small></div>`).join('')}`,
+      null, '', false, true);
+    form.addEventListener('click', e => {
+      const b = e.target.closest('button[type=button]');
+      if (!b || b.hasAttribute('data-cerrar')) return;
+      if (b.dataset.nuevo) { cerrar(); return b.dataset.nuevo === 'evento' ? formEvento(null, f) : formAgenda(null, f); }
+      if (b.dataset.ev) { cerrar(); return formEvento(eventos.find(x => x.id === b.dataset.ev)); }
+      if (b.dataset.ag) { cerrar(); return formAgenda(agenda.find(x => x.id === b.dataset.ag)); }
+      if (b.dataset.hecho) { cerrar(); return marcarAgenda(b.dataset.hecho, 'hecho'); }
+    });
+  }
+</script>

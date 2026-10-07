@@ -20,13 +20,14 @@ function guardarUsuario(token, d) {
     jornada_horas: Number(d.jornada_horas)
   };
   if (!datos.nombre) throw new Error('Escribe el nombre.');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(datos.correo)) throw new Error('El correo no es válido.');
+  // El correo es opcional: sin correo la persona aparece en eventos y horas, pero no puede ingresar.
+  if (datos.correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(datos.correo)) throw new Error('El correo no es válido.');
   if (ROLES.indexOf(datos.rol) < 0) throw new Error('Rol no válido.');
   if (!(datos.jornada_horas > 0 && datos.jornada_horas <= 24)) throw new Error('La jornada debe estar entre 1 y 24 horas.');
 
   return conLock_(() => {
     const todos = leerTabla_('Usuarios');
-    if (todos.some(x => x.correo.toLowerCase() === datos.correo && x.id !== d.id)) {
+    if (datos.correo && todos.some(x => x.correo.toLowerCase() === datos.correo && x.id !== d.id)) {
       throw new Error('Ya existe un usuario con ese correo.');
     }
 
@@ -45,8 +46,8 @@ function guardarUsuario(token, d) {
     }
 
     const nuevo = Object.assign({ id: uuid_(), activo: 'SI', creado: ahora_() }, datos);
-    const pin = generarPin_();
-    nuevo.pin_hash = hashPin_(nuevo.id, pin);
+    const pin = datos.correo ? generarPin_() : null;
+    nuevo.pin_hash = pin ? hashPin_(nuevo.id, pin) : '';
     agregarFila_('Usuarios', nuevo);
     invalidar_('usuarios');
     log_(u.id, 'crear_usuario', nuevo.id, datos.rol);
@@ -60,6 +61,7 @@ function resetearPin(token, id) {
   return conLock_(() => {
     const fila = leerTabla_('Usuarios').find(x => x.id === id);
     if (!fila) throw new Error('Usuario no encontrado.');
+    if (!fila.correo) throw new Error('Primero agrega un correo a esta persona para que pueda ingresar.');
     const pin = generarPin_();
     fila.pin_hash = hashPin_(fila.id, pin);
     escribirFila_('Usuarios', fila);
