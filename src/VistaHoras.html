@@ -1,217 +1,170 @@
 <script>
-  /* ---------- Horas: registro (practicantes y equipo) y carga laboral ---------- */
+  /* ---------- Horas y sobretiempo: marcación semanal de ingreso/salida + tabla del equipo ---------- */
 
-  function rangoHoras(clave) {
+  const DIAS_LARGOS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+  function rangoAsistencia(clave) {
     const hoy = S.hoy;
-    const dow = (new Date(hoy + 'T12:00:00').getDay() + 6) % 7;
+    const lunes = sumarDias(hoy, -((new Date(hoy + 'T12:00:00').getDay() + 6) % 7));
     const mes = hoy.slice(0, 7);
     const ant = sumarMes(mes, -1);
     const finMes = m => sumarDias(sumarMes(m, 1) + '-01', -1);
     return {
-      semana: [sumarDias(hoy, -dow), hoy],
-      mes: [mes + '-01', hoy],
-      anterior: [ant + '-01', finMes(ant)]
+      semana: [lunes, hoy, 'Esta semana'],
+      semanaPasada: [sumarDias(lunes, -7), sumarDias(lunes, -1), 'Semana pasada'],
+      mes: [mes + '-01', hoy, 'Este mes'],
+      mesPasado: [ant + '-01', finMes(ant), 'Mes pasado']
     }[clave];
   }
 
-  VISTAS.horas = {
-    titulo: () => esGestor() ? 'Horas y carga laboral' : 'Mis horas',
+  VISTAS.asistencia = {
+    titulo: () => esGestor() ? 'Horas y sobretiempo' : 'Mi horario',
     async pintar() {
-      const periodo = S.periodoHoras || 'semana';
-      const persona = esGestor() ? (S.personaHoras || '') : S.u.id;
-      const [desde, hasta] = rangoHoras(periodo);
-      const d = await api('listarHoras', desde, hasta, persona);
-      if (S.vista !== 'horas') return;
-      const total = d.registros.reduce((s, r) => s + r.horas, 0);
-      const yo = d.personas.find(p => p.usuario_id === (persona || S.u.id));
-      const usoClase = u => (u === null ? '' : u > 100 ? 'alto' : u < 60 ? 'bajo' : '');
-
-      $('#vista').innerHTML = `
-        <div class="rejilla-horas">
-          <form class="card" id="fHoras">
-            <h3>Registrar horas</h3>
-            ${esGestor() ? `<label>Persona<select name="usuario_id">${opcionesPersonas(S.u.id)}</select></label>` : ''}
-            <div class="tres">
-              <label>Fecha<input type="date" name="fecha" required value="${S.hoy}" max="${S.hoy}"></label>
-              <label>Inicio<input type="time" name="inicio" required></label>
-              <label>Fin<input type="time" name="fin" required></label>
-            </div>
-            <div class="dos">
-              <label>Función<select name="funcion" required>${opciones(S.cfg.funciones, '', 'Elegir…')}</select></label>
-              <label>Marca<select name="marca">${opciones(S.cfg.marcas, '', '—')}</select></label>
-            </div>
-            <label>¿Qué hiciste?<textarea name="descripcion" rows="2" maxlength="500" placeholder="Ej.: edición de reel para Nexo"></textarea></label>
-            <p class="error" id="horasError"></p>
-            <button class="btn primario" type="submit">Guardar registro</button>
-          </form>
-          <section class="card">
-            <div class="cab-card"><h3>Resumen</h3>
-              <div class="controles">
-                ${esGestor() ? `<select id="fPersonaH" aria-label="Persona">${opcionesPersonas(persona, 'Todo el equipo')}</select>` : ''}
-                <select id="fPeriodo" aria-label="Periodo">${opciones([['semana', 'Esta semana'], ['mes', 'Este mes'], ['anterior', 'Mes anterior']], periodo)}</select>
-              </div></div>
-            <p class="sub">${fmtFecha(desde)} al ${fmtFecha(hasta)} · ${fmtNum(d.horasLaborables, 1)} h laborables según horario</p>
-            <div class="kpis mini">
-              <div class="kpi"><span class="kpi-v">${fmtNum(total, 1)}</span><span class="kpi-k">Horas registradas</span></div>
-              ${yo && persona ? `<div class="kpi"><span class="kpi-v">${fmtNum(yo.capacidad, 0)}</span><span class="kpi-k">Capacidad (horario laboral)</span></div>
-                <div class="kpi ${usoClase(yo.uso)}"><span class="kpi-v">${yo.uso === null ? '—' : yo.uso + '%'}</span><span class="kpi-k">Uso de capacidad</span></div>` : ''}
-            </div>
-            <h4>Por función</h4>
-            ${barras(d.porFuncion, { fmt: v => fmtNum(v, 1) + ' h', vacio: 'Sin horas en este periodo.' })}
-          </section>
-        </div>
-        ${esGestor() && !persona ? `<section class="card">
-          <h3>Carga por persona</h3>
-          <p class="sub">Uso = horas registradas ÷ horas del horario laboral (L–V 9:00–18:30, sáb 9:00–13:00). Sobre 100% indica sobrecarga; bajo 60%, capacidad libre o falta registrar.</p>
-          <div class="tabla-caja plana"><table>
-            <thead><tr><th>Persona</th><th>Área</th><th class="num">Horas</th><th class="num">Capacidad</th><th>Uso</th></tr></thead>
-            <tbody>${d.personas.map(p => `<tr class="clic" data-p="${esc(p.usuario_id)}">
-              <td>${esc(p.nombre)}${p.rol === 'practicante' ? ' <span class="etiqueta">Practicante</span>' : ''}</td><td>${esc(p.area)}</td>
-              <td class="num">${fmtNum(p.horas, 1)}</td><td class="num">${fmtNum(p.capacidad, 0)}</td>
-              <td><span class="medidor"><span class="${usoClase(p.uso)}" style="width:${Math.min(100, p.uso || 0)}%"></span></span> ${p.uso === null ? '—' : p.uso + '%'}</td></tr>`).join('')}</tbody>
-          </table></div>
-        </section>` : ''}
-        <section class="card sin-pad">
-          <div class="tabla-caja plana"><table>
-            <thead><tr><th>Fecha</th>${esGestor() ? '<th>Persona</th>' : ''}<th>Horario</th><th class="num">Horas</th><th>Función</th><th>Marca</th><th>Detalle</th><th></th></tr></thead>
-            <tbody id="tRegistros">${d.registros.map(r => `<tr>
-              <td>${diaSemana(r.fecha)} ${fmtFecha(r.fecha)}</td>${esGestor() ? `<td>${esc(r.persona)}</td>` : ''}
-              <td>${esc(r.inicio)}–${esc(r.fin)}</td><td class="num">${fmtNum(r.horas, 2)}</td><td>${esc(r.funcion)}</td>
-              <td>${esc(r.marca)}</td><td class="ancho">${esc(r.descripcion)}</td>
-              <td>${r.anulable ? `<button class="btn mini fantasma" data-anular="${esc(r.id)}">Anular</button>` : ''}</td></tr>`).join('')
-              || '<tr><td colspan="8" class="vacio">Sin registros en este periodo.</td></tr>'}</tbody>
-          </table></div>
-        </section>`;
-
-      $('#fHoras').onsubmit = async e => {
-        e.preventDefault();
-        const f = e.target;
-        const datos = Object.fromEntries(new FormData(f));
-        const btn = $('[type=submit]', f);
-        btn.disabled = true;
-        try {
-          await api('registrarHoras', datos);
-          aviso('Horas registradas');
-          repintar();
-        } catch (err) { $('#horasError').textContent = err.message; btn.disabled = false; }
-      };
-      $('#fPeriodo').onchange = e => { S.periodoHoras = e.target.value; repintar(); };
-      if ($('#fPersonaH')) $('#fPersonaH').onchange = e => { S.personaHoras = e.target.value; repintar(); };
-      $('#vista').onclick = async e => {
-        const fila = e.target.closest('tr[data-p]');
-        if (fila) { S.personaHoras = fila.dataset.p; return repintar(); }
-        const b = e.target.closest('[data-anular]');
-        if (!b) return;
-        await confirmar('¿Anular este registro de horas?', 'Anular');
-        try { await api('anularHoras', b.dataset.anular); aviso('Registro anulado'); repintar(); }
-        catch (err) { aviso(err.message, 'error'); }
-      };
+      const partes = [pintarMiSemana()];
+      if (esGestor()) partes.push(datosEquipoAsistencia());
+      const [semana, equipo] = await Promise.all(partes);
+      if (S.vista !== 'asistencia') return;
+      $('#vista').innerHTML = htmlSemana(semana) + (equipo ? htmlEquipoAsistencia(equipo) : '');
+      enlazarSemana(semana);
+      if (equipo) enlazarEquipoAsistencia(equipo);
     }
   };
 
-  /* ---------- Sobretiempo: horas extra, aprobación, compensación y saldo ---------- */
+  /* --- Semana (marcación) --- */
 
-  const ESTADO_EXTRA = { pendiente: 'Por aprobar', aprobado: 'Aprobado', rechazado: 'Rechazado' };
+  function pintarMiSemana() {
+    return api('getMiSemana', S.lunesAsis || '', S.personaAsis || '');
+  }
 
-  VISTAS.sobretiempo = {
-    titulo: () => esGestor() ? 'Sobretiempo del equipo' : 'Mis horas extra',
-    async pintar() {
-      const d = await api('getSobretiempo');
-      if (S.vista !== 'sobretiempo') return;
-      const filtro = S.filtroExtra || '';
-      const registros = filtro ? d.registros.filter(r => r.usuario_id === filtro) : d.registros;
-      const mio = d.saldos.find(s => s.usuario_id === S.u.id) || { aprobadas: 0, pendientes: 0, compensadas: 0, saldo: 0 };
-      $('#vista').innerHTML = `
-        <div class="rejilla-horas">
-          <form class="card" id="fExtra">
-            <h3>Registrar horas extra</h3>
-            <p class="sub">Horario: L–V 9:00–18:30 · sáb 9:00–13:00. Solo se cuenta lo trabajado fuera de ese horario; domingos y feriados cuentan completos.</p>
-            ${esGestor() ? `<label>Persona<select name="usuario_id">${opcionesPersonas(S.u.id)}</select></label>` : ''}
-            <div class="tres">
-              <label>Fecha<input type="date" name="fecha" required value="${S.hoy}" max="${S.hoy}"></label>
-              <label>Desde<input type="time" name="inicio" required></label>
-              <label>Hasta<input type="time" name="fin" required></label>
-            </div>
-            <label>Evento (opcional)<select name="evento_id">${opciones(d.eventos.map(e => [e.id, fmtFecha(e.fecha) + ' · ' + e.titulo + ' · ' + e.empresa]), '', '—')}</select></label>
-            <label>Motivo<textarea name="motivo" rows="2" maxlength="500" placeholder="Ej.: cobertura de evento, entrega urgente"></textarea></label>
-            ${esGestor() ? '<label class="check"><input type="checkbox" name="aprobar"> Aprobar de una vez (si es para otra persona)</label>' : ''}
-            <p class="error" id="extraError"></p>
-            <button class="btn primario" type="submit">Registrar</button>
-          </form>
-          <section class="card">
-            ${esGestor() ? `<div class="cab-card"><h3>Saldo por persona</h3>${esAdmin() ? '<button class="btn mini primario" id="bCompensar">+ Registrar compensación</button>' : ''}</div>
-              <p class="sub">Saldo = horas extra aprobadas − horas ya compensadas (día libre, horas libres o pago). Para coordinar con RR. HH.</p>
-              <div class="tabla-caja plana"><table>
-                <thead><tr><th>Persona</th><th class="num">Por aprobar</th><th class="num">Aprobadas</th><th class="num">Compensadas</th><th class="num">Saldo</th></tr></thead>
-                <tbody>${d.saldos.map(s => `<tr class="clic" data-p="${esc(s.usuario_id)}"><td>${esc(s.nombre)}</td>
-                  <td class="num">${fmtNum(s.pendientes, 2)}</td><td class="num">${fmtNum(s.aprobadas, 2)}</td>
-                  <td class="num">${fmtNum(s.compensadas, 2)}</td><td class="num"><b class="${s.saldo > 0 ? 'alerta' : ''}">${fmtNum(s.saldo, 2)} h</b></td></tr>`).join('')
-                  || '<tr><td colspan="5" class="vacio">Aún no hay horas extra registradas.</td></tr>'}</tbody>
-              </table></div>`
-            : `<h3>Mi saldo</h3>
-              <div class="kpis mini">
-                <div class="kpi"><span class="kpi-v">${fmtNum(mio.saldo, 2)}</span><span class="kpi-k">Horas por compensar</span></div>
-                <div class="kpi"><span class="kpi-v">${fmtNum(mio.pendientes, 2)}</span><span class="kpi-k">Por aprobar</span></div>
-                <div class="kpi"><span class="kpi-v">${fmtNum(mio.compensadas, 2)}</span><span class="kpi-k">Ya compensadas</span></div>
-              </div>`}
-          </section>
-        </div>
-        <section class="card sin-pad">
-          <div class="cab-card pad"><h3>Registros</h3>
-            ${esGestor() ? `<select id="fPersonaX" aria-label="Persona">${opcionesPersonas(filtro, 'Todo el equipo')}</select>` : ''}</div>
-          <div class="tabla-caja plana"><table>
-            <thead><tr><th>Fecha</th>${esGestor() ? '<th>Persona</th>' : ''}<th>Tramo</th><th class="num">Horas extra</th><th>Motivo / evento</th><th>Estado</th><th></th></tr></thead>
-            <tbody id="tExtra">${registros.map(r => `<tr>
-              <td>${diaSemana(r.fecha)} ${fmtFecha(r.fecha)}</td>${esGestor() ? `<td>${esc(r.persona)}</td>` : ''}
-              <td>${esc(r.inicio)}–${esc(r.fin)}</td><td class="num">${fmtNum(r.horas, 2)}</td>
-              <td class="ancho">${esc(r.motivo)}${r.evento ? `<small>${esc(r.evento)}</small>` : ''}</td>
-              <td><span class="estado e-${r.estado === 'aprobado' ? 'realizado' : r.estado === 'rechazado' ? 'cancelado' : 'pendiente'}">${ESTADO_EXTRA[r.estado]}</span>
-                ${r.nota ? `<small>${esc(r.nota)}</small>` : ''}${r.revisor ? `<small>por ${esc(r.revisor)}</small>` : ''}</td>
-              <td>${r.revisable ? `<button class="btn mini ok" data-aprobar="${esc(r.id)}">Aprobar</button>
-                <button class="btn mini fantasma" data-rechazar="${esc(r.id)}">Rechazar</button>` : ''}</td></tr>`).join('')
-              || '<tr><td colspan="7" class="vacio">Sin registros.</td></tr>'}</tbody>
-          </table></div>
-        </section>
-        ${d.compensaciones.length ? `<section class="card sin-pad"><div class="cab-card pad"><h3>Compensaciones</h3></div>
-          <div class="tabla-caja plana"><table><thead><tr><th>Fecha</th><th>Persona</th><th>Tipo</th><th class="num">Horas</th><th>Detalle</th></tr></thead>
-          <tbody>${d.compensaciones.map(c => `<tr><td>${fmtFecha(c.fecha)}</td><td>${esc(c.persona)}</td><td>${esc(c.tipo)}</td>
-            <td class="num">${fmtNum(c.horas, 2)}</td><td class="ancho">${esc(c.motivo)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}`;
-
-      $('#fExtra').onsubmit = async e => {
-        e.preventDefault();
-        const datos = Object.fromEntries(new FormData(e.target));
-        datos.aprobar = datos.aprobar === 'on';
-        const btn = $('[type=submit]', e.target);
-        btn.disabled = true;
-        try {
-          const r = await api('registrarSobretiempo', datos);
-          aviso(`Registradas ${fmtNum(r.horas, 2)} h extra${r.estado === 'aprobado' ? ' (aprobadas)' : ' · pendiente de aprobación'}`);
-          repintar();
-        } catch (err) { $('#extraError').textContent = err.message; btn.disabled = false; }
-      };
-      if ($('#fPersonaX')) $('#fPersonaX').onchange = e => { S.filtroExtra = e.target.value; repintar(); };
-      if ($('#bCompensar')) $('#bCompensar').onclick = () => modal('Registrar compensación', `
-        <div class="dos">
-          <label>Persona<select name="usuario_id" required>${opcionesPersonas('', 'Elegir…')}</select></label>
-          <label>Fecha<input type="date" name="fecha" required value="${S.hoy}"></label>
-        </div>
-        <div class="dos">
-          <label>Tipo<select name="tipo">${opciones(d.tiposCompensacion)}</select></label>
-          <label>Horas compensadas<input type="number" name="horas" min="0.5" step="0.5" required></label>
-        </div>
-        <label>Detalle<input name="motivo" maxlength="500" placeholder="Ej.: día libre 15/10 coordinado con RR. HH."></label>`,
-        async x => { await api('registrarCompensacion', x); aviso('Compensación registrada'); repintar(); }, 'Registrar');
-      $('#vista').onclick = async e => {
-        const fila = e.target.closest('tr[data-p]');
-        if (fila) { S.filtroExtra = fila.dataset.p; return repintar(); }
-        const a = e.target.closest('[data-aprobar]');
-        const r = e.target.closest('[data-rechazar]');
-        try {
-          if (a) { await api('revisarSobretiempo', a.dataset.aprobar, 'aprobado', ''); aviso('Horas extra aprobadas'); repintar(); }
-          if (r) modal('Rechazar horas extra', '<label>Motivo<textarea name="nota" rows="3" required></textarea></label>',
-            async x => { await api('revisarSobretiempo', r.dataset.rechazar, 'rechazado', x.nota); aviso('Registro rechazado'); repintar(); }, 'Rechazar');
-        } catch (err) { aviso(err.message, 'error'); }
-      };
+  function htmlSemana(d) {
+    const otro = esGestor() && S.personaAsis && S.personaAsis !== S.u.id;
+    if (!d.marca) {
+      return `<section class="card">${esGestor() ? selectorPersonaSemana() : ''}<p class="vacio">${esc(d.mensaje)}</p></section>`;
     }
-  };
+    const total = d.dias.reduce((s, x) => s + x.horas, 0);
+    const meta = d.persona.practicante ? d.horasSemanaPracticante : null;
+    return `<section class="card">
+      <div class="cab-card">
+        <h3>${otro ? 'Horario de ' + esc(d.persona.nombre) : 'Mi semana'}</h3>
+        ${esGestor() ? `<div class="controles sin-salto">${selectorPersonaSemana()}
+          <button type="button" class="btn-ico" data-sem="-1" aria-label="Semana anterior">‹</button>
+          <button type="button" class="btn-ico" data-sem="1" aria-label="Semana siguiente">›</button></div>` : ''}
+      </div>
+      <p class="sub">Semana del ${fmtFecha(d.lunes)} al ${fmtFecha(sumarDias(d.lunes, 6))}.
+        ${d.persona.practicante ? `Practicante: ${meta} h semanales en los días que coordines.` : 'Horario: L–V 9:00–18:30 · sáb 9:00–13:00.'}
+        ${esGestor() ? '' : 'Al empezar una nueva semana la lista se reinicia.'}</p>
+      <div class="semana">
+        ${d.dias.map((x, i) => `<div class="dia-marca${x.fecha === S.hoy ? ' hoy' : ''}${!x.laborable && !d.persona.practicante ? ' libre' : ''}" data-fecha="${x.fecha}">
+          <div class="dia-nombre"><b>${DIAS_LARGOS[i]} ${Number(x.fecha.slice(8))}</b>
+            <small>${x.feriado ? 'Feriado' : (!x.laborable && !d.persona.practicante ? 'Día libre' : '')}${x.eventos.length ? ' 🎥 ' + esc(x.eventos.join(', ')) : ''}</small></div>
+          <label>Ingreso<input type="time" data-k="entrada" value="${esc(x.entrada)}" ${x.editable ? '' : 'disabled'}></label>
+          <label>Salida<input type="time" data-k="salida" value="${esc(x.salida)}" ${x.editable ? '' : 'disabled'}></label>
+          <span class="dia-horas">${x.horas ? fmtNum(x.horas, 2) + ' h' : (x.entrada && !x.salida ? 'Falta salida' : '—')}</span>
+        </div>`).join('')}
+      </div>
+      <div class="kpis mini">
+        <div class="kpi"><span class="kpi-v">${fmtNum(total, 2)}${meta ? ` <small>/ ${meta} h</small>` : ''}</span><span class="kpi-k">Horas de la semana</span></div>
+        <div class="kpi"><span class="kpi-v">${fmtNum(d.resumen.compensable || 0, 2)}</span><span class="kpi-k">Sobretiempo en eventos</span></div>
+        ${esGestor() ? `<div class="kpi"><span class="kpi-v">${fmtNum(d.resumen.noCompensable || 0, 2)}</span><span class="kpi-k">Sobretiempo sin evento</span></div>` : ''}
+      </div>
+      <p class="sub">Se guarda solo al cambiar una hora.${d.persona.practicante ? ' El sobretiempo de practicantes es lo que pase de ' + meta + ' h en la semana.' : ' El sobretiempo es lo trabajado fuera del horario.'}</p>
+    </section>`;
+  }
+
+  function selectorPersonaSemana() {
+    const personas = S.usuarios.filter(u => u.marcaHoras);
+    return `<select id="aPersonaSem" aria-label="Persona">${opciones(personas.map(u => [u.id, u.nombre]), S.personaAsis || S.u.id)}</select>`;
+  }
+
+  function enlazarSemana(d) {
+    if ($('#aPersonaSem')) $('#aPersonaSem').onchange = e => { S.personaAsis = e.target.value; repintar(); };
+    $$('[data-sem]').forEach(b => { b.onclick = () => { S.lunesAsis = sumarDias(d.lunes || S.hoy, 7 * Number(b.dataset.sem)); repintar(); }; });
+    $$('.dia-marca input').forEach(inp => {
+      inp.onchange = async () => {
+        const fila = inp.closest('.dia-marca');
+        const entrada = $('[data-k=entrada]', fila).value;
+        const salida = $('[data-k=salida]', fila).value;
+        if (!entrada && salida) return aviso('Primero marca la hora de ingreso.', 'error');
+        try {
+          await api('marcarAsistencia', { fecha: fila.dataset.fecha, entrada, salida, usuario_id: S.personaAsis || '' });
+          aviso('Guardado');
+          repintar();
+        } catch (e) { aviso(e.message, 'error'); }
+      };
+    });
+  }
+
+  /* --- Equipo (coordinación/admin) --- */
+
+  function datosEquipoAsistencia() {
+    const clave = S.periodoAsis || 'semana';
+    const [desde, hasta] = clave === 'rango' ? [S.desdeAsis || S.hoy.slice(0, 8) + '01', S.hastaAsis || S.hoy] : rangoAsistencia(clave);
+    return api('getAsistenciaEquipo', desde, hasta, S.filtroAsis || '').then(d => Object.assign(d, { desde, hasta, clave }));
+  }
+
+  function htmlEquipoAsistencia(d) {
+    const h = v => (v ? fmtNum(v, 2) : '—');
+    return `
+      <h2 class="seccion">Equipo</h2>
+      <div class="toolbar">
+        <div class="controles">
+          <select id="aPeriodo" aria-label="Periodo">${opciones([['semana', 'Esta semana'], ['semanaPasada', 'Semana pasada'], ['mes', 'Este mes'], ['mesPasado', 'Mes pasado'], ['rango', 'Rango…']], d.clave)}</select>
+          ${d.clave === 'rango' ? `<input type="date" id="aDesde" value="${d.desde}"><input type="date" id="aHasta" value="${d.hasta}">` : ''}
+          <select id="aFiltro" aria-label="Persona">${opciones(d.personas.map(p => [p.usuario_id, p.nombre]), S.filtroAsis || '', 'Todo el equipo')}</select>
+        </div>
+        ${esAdmin() ? '<button class="btn" id="bCompensar">+ Registrar compensación</button>' : ''}
+      </div>
+      <p class="sub">Del ${fmtFecha(d.desde)} al ${fmtFecha(d.hasta)}. <b>Compensable</b>: sobretiempo en días en que la persona tenía un evento asignado.
+        <b>No compensable</b>: sobretiempo sin evento ese día (revísalo: quizá se le pidió quedarse).</p>
+      <section class="card sin-pad"><div class="cab-card pad"><h3>Resumen por persona</h3></div>
+        <div class="tabla-caja plana"><table>
+          <thead><tr><th>Persona</th><th class="num">Días</th><th class="num">Horas</th><th class="num">Compensable</th><th class="num">No compensable</th>
+            <th class="num">Compensado (total)</th><th class="num">Saldo por compensar</th></tr></thead>
+          <tbody>${d.personas.map(p => `<tr class="clic" data-p="${esc(p.usuario_id)}"><td><b>${esc(p.nombre)}</b>${p.practicante ? ' <span class="etiqueta">Practicante</span>' : ''}</td>
+            <td class="num">${p.dias}</td><td class="num">${h(p.horas)}</td><td class="num"><span class="${p.compensable ? 'sube' : ''}">${h(p.compensable)}</span></td>
+            <td class="num"><span class="${p.noCompensable ? 'baja' : ''}">${h(p.noCompensable)}</span></td>
+            <td class="num">${h(p.compensado)}</td><td class="num"><b>${h(p.saldo)}</b></td></tr>`).join('')}</tbody>
+        </table></div></section>
+      ${d.semanasPracticantes.length ? `<section class="card sin-pad"><div class="cab-card pad"><h3>Practicantes por semana</h3></div>
+        <p class="sub pad-x">Meta: ${d.horasSemanaPracticante} h semanales. Lo que pase es sobretiempo; es compensable hasta lo trabajado en días con evento.</p>
+        <div class="tabla-caja plana"><table>
+          <thead><tr><th>Semana</th><th>Persona</th><th class="num">Horas</th><th class="num">Compensable</th><th class="num">No compensable</th></tr></thead>
+          <tbody>${d.semanasPracticantes.map(s => `<tr><td>${fmtFecha(s.lunes)} – ${fmtFecha(sumarDias(s.lunes, 6))}</td><td>${esc(s.nombre)}</td>
+            <td class="num">${fmtNum(s.horas, 2)} / ${d.horasSemanaPracticante}</td><td class="num">${h(s.compensable)}</td><td class="num">${h(s.noCompensable)}</td></tr>`).join('')}</tbody>
+        </table></div></section>` : ''}
+      <section class="card sin-pad"><div class="cab-card pad"><h3>Historial de ingresos y salidas</h3></div>
+        <div class="tabla-caja plana"><table>
+          <thead><tr><th>Fecha</th><th>Persona</th><th>Ingreso</th><th>Salida</th><th class="num">Horas</th><th class="num">Compensable</th><th class="num">No compensable</th><th>Evento</th></tr></thead>
+          <tbody>${d.filas.map(f => `<tr><td>${diaSemana(f.fecha)} ${fmtFecha(f.fecha)}</td><td>${esc(f.nombre)}</td>
+            <td>${esc(f.entrada)}</td><td>${f.salida ? esc(f.salida) : '<span class="alerta">Sin salida</span>'}</td><td class="num">${h(f.horas)}</td>
+            <td class="num">${f.practicante ? '<small>semanal</small>' : h(f.compensable)}</td><td class="num">${f.practicante ? '<small>semanal</small>' : h(f.noCompensable)}</td>
+            <td class="ancho">${esc(f.eventos.join(', ')) || '—'}${f.nota ? `<small>${esc(f.nota)}</small>` : ''}</td></tr>`).join('')
+            || '<tr><td colspan="8" class="vacio">Sin marcaciones en este periodo.</td></tr>'}</tbody>
+        </table></div></section>
+      ${d.compensaciones.length ? `<section class="card sin-pad"><div class="cab-card pad"><h3>Compensaciones registradas</h3></div>
+        <div class="tabla-caja plana"><table><thead><tr><th>Fecha</th><th>Persona</th><th>Tipo</th><th class="num">Horas</th><th>Detalle</th></tr></thead>
+        <tbody>${d.compensaciones.map(c => `<tr><td>${fmtFecha(c.fecha)}</td><td>${esc(c.persona)}</td><td>${esc(c.tipo)}</td>
+          <td class="num">${fmtNum(c.horas, 2)}</td><td class="ancho">${esc(c.motivo)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}`;
+  }
+
+  function enlazarEquipoAsistencia(d) {
+    $('#aPeriodo').onchange = e => { S.periodoAsis = e.target.value; repintar(); };
+    $('#aFiltro').onchange = e => { S.filtroAsis = e.target.value; repintar(); };
+    if ($('#aDesde')) {
+      $('#aDesde').onchange = e => { S.desdeAsis = e.target.value; repintar(); };
+      $('#aHasta').onchange = e => { S.hastaAsis = e.target.value; repintar(); };
+    }
+    if ($('#bCompensar')) $('#bCompensar').onclick = () => modal('Registrar compensación', `
+      <div class="dos">
+        <label>Persona<select name="usuario_id" required>${opciones(d.personas.map(p => [p.usuario_id, p.nombre]), '', 'Elegir…')}</select></label>
+        <label>Fecha<input type="date" name="fecha" required value="${S.hoy}"></label>
+      </div>
+      <div class="dos">
+        <label>Tipo<select name="tipo">${opciones(d.tiposCompensacion)}</select></label>
+        <label>Horas compensadas<input type="number" name="horas" min="0.5" step="0.5" required></label>
+      </div>
+      <label>Detalle<input name="motivo" maxlength="500" placeholder="Ej.: día libre 15/10 coordinado con RR. HH."></label>`,
+      async x => { await api('registrarCompensacion', x); aviso('Compensación registrada'); repintar(); }, 'Registrar');
+    $$('tr[data-p]').forEach(tr => { tr.onclick = () => { S.filtroAsis = tr.dataset.p; S.personaAsis = tr.dataset.p; repintar(); }; });
+  }
 </script>

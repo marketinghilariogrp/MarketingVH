@@ -118,3 +118,169 @@ function serieRedes_(desdeMes, hastaMes) {
       return o;
     });
 }
+
+/* ---------- Reporte de redes por rango de meses (coordinación/admin) ---------- */
+
+function mesesEntre_(desde, hasta) {
+  const out = [];
+  let m = desde;
+  while (m <= hasta && out.length < 36) {
+    out.push(m);
+    m = m.slice(5) === '12' ? (Number(m.slice(0, 4)) + 1) + '-01' : m.slice(0, 5) + String(Number(m.slice(5)) + 1).padStart(2, '0');
+  }
+  return out;
+}
+
+/**
+ * Reporte completo de crecimiento entre dos meses: por cuenta, por marca, por red y mes a mes,
+ * con lecturas automáticas. Base de comparación: el mes anterior a «desde» (si no hay, el primer mes con datos).
+ */
+function getReporteRedes(token, desdeMes, hastaMes, marca) {
+  const u = sesion_(token);
+  exigirGestor_(u);
+  desdeMes = mesValido_(desdeMes);
+  hastaMes = mesValido_(hastaMes);
+  if (desdeMes > hastaMes) throw new Error('El mes inicial debe ser anterior al final.');
+  return reporteRedes_(desdeMes, hastaMes, texto_(marca, 100));
+}
+
+function reporteRedes_(desdeMes, hastaMes, marca) {
+  const meses = mesesEntre_(desdeMes, hastaMes);
+  const base = mesAnterior_(desdeMes);
+  const cuentas = leerTabla_('Redes_cuentas').filter(c => c.activo === 'SI' && (!marca || c.marca === marca));
+  const datos = serieRedes_(base, hastaMes).filter(r => cuentas.some(c => c.id === r.cuenta_id));
+  const de = (id, m) => datos.find(r => r.cuenta_id === id && r.mes === m) || null;
+  const r1 = n => Math.round(n * 10) / 10;
+  const pct = (a, b) => (b ? r1((a - b) / b * 100) : null);
+
+  const resumir = (lista, etiqueta) => {
+    const ini = lista.map(c => {
+      const b = de(c.id, base);
+      if (b && b.seguidores !== null) return b.seguidores;
+      const p = meses.map(m => de(c.id, m)).find(x => x && x.seguidores !== null);
+      return p ? p.seguidores : null;
+    });
+    const fin = lista.map(c => {
+      const p = meses.slice().reverse().map(m => de(c.id, m)).find(x => x && x.seguidores !== null);
+      return p ? p.seguidores : null;
+    });
+    const validos = lista.map((c, i) => ini[i] !== null && fin[i] !== null);
+    const hay = validos.some(Boolean);
+    const sIni = ini.reduce((s, v, i) => s + (validos[i] ? v : 0), 0);
+    const sFin = fin.reduce((s, v, i) => s + (validos[i] ? v : 0), 0);
+    const suma = k => lista.reduce((s, c) => s + meses.reduce((t, m) => t + ((de(c.id, m) || {})[k] || 0), 0), 0);
+    const alcance = suma('alcance');
+    const interacciones = suma('interacciones');
+    const publicaciones = suma('publicaciones');
+    return Object.assign(etiqueta, {
+      seguidoresInicio: hay ? sIni : null,
+      seguidoresFin: hay ? sFin : null,
+      nuevos: hay ? sFin - sIni : null,
+      crecimiento: hay ? pct(sFin, sIni) : null,
+      alcance: alcance, visualizaciones: suma('visualizaciones'), interacciones: interacciones, publicaciones: publicaciones,
+      engagement: alcance ? r1(interacciones / alcance * 100) : null,
+      interaccionesPorPublicacion: publicaciones ? r1(interacciones / publicaciones) : null,
+      mesesConDatos: meses.filter(m => lista.some(c => de(c.id, m))).length
+    });
+  };
+
+  const porCuenta = cuentas.map(c => resumir([c], { cuenta_id: c.id, marca: c.marca, red: c.red, usuario: c.usuario }))
+    .sort((a, b) => (a.marca + a.red).localeCompare(b.marca + b.red));
+  const marcas = Array.from(new Set(cuentas.map(c => c.marca))).sort();
+  const redes = Array.from(new Set(cuentas.map(c => c.red))).sort();
+  const porMarca = marcas.map(m => resumir(cuentas.filter(c => c.marca === m), { marca: m }));
+  const porRed = redes.map(r => resumir(cuentas.filter(c => c.red === r), { red: r }));
+  const total = resumir(cuentas, { marca: 'Total' });
+
+  // Mes a mes por marca (suma de las cuentas con dato ese mes).
+  const mensual = marcas.map(m => ({
+    marca: m,
+    meses: meses.map(ms => {
+      const rs = cuentas.filter(c => c.marca === m).map(c => de(c.id, ms)).filter(Boolean);
+      const s = k => rs.reduce((t, r) => t + (r[k] || 0), 0);
+      return { mes: ms, seguidores: rs.some(r => r.seguidores !== null) ? s('seguidores') : null, alcance: s('alcance'),
+        visualizaciones: s('visualizaciones'), interacciones: s('interacciones'), publicaciones: s('publicaciones') };
+    })
+  }));
+  const detalle = [];
+  cuentas.forEach(c => meses.forEach(m => {
+    const r = de(c.id, m);
+    if (r) detalle.push({ marca: c.marca, red: c.red, usuario: c.usuario, mes: m, seguidores: r.seguidores, alcance: r.alcance,
+      visualizaciones: r.visualizaciones, interacciones: r.interacciones, publicaciones: r.publicaciones });
+  }));
+
+  // Lecturas automáticas.
+  const n = v => Number(v).toLocaleString('es-PE', { maximumFractionDigits: 1 });
+  const signo = v => (v >= 0 ? '+' : '') + n(v) + '%';
+  const lect = [];
+  if (total.nuevos !== null) {
+    lect.push({ tono: total.nuevos >= 0 ? 'bueno' : 'malo', texto: 'En el periodo las cuentas ' + (total.nuevos >= 0 ? 'sumaron ' : 'perdieron ') +
+      n(Math.abs(total.nuevos)) + ' seguidores (' + signo(total.crecimiento) + '), de ' + n(total.seguidoresInicio) + ' a ' + n(total.seguidoresFin) + '.' });
+  }
+  const conCrec = porMarca.filter(x => x.crecimiento !== null);
+  if (conCrec.length >= 2) {
+    const o = conCrec.slice().sort((a, b) => b.crecimiento - a.crecimiento);
+    lect.push({ tono: 'bueno', texto: 'La marca que más creció fue ' + o[0].marca + ' (' + signo(o[0].crecimiento) + ', ' + n(o[0].nuevos) + ' seguidores nuevos).' });
+    const ult = o[o.length - 1];
+    lect.push({ tono: ult.crecimiento < 0 ? 'malo' : 'neutro', texto: 'La de menor crecimiento fue ' + ult.marca + ' (' + signo(ult.crecimiento) + ').' });
+  }
+  const cuentasCrec = porCuenta.filter(x => x.crecimiento !== null);
+  if (cuentasCrec.length) {
+    const c = cuentasCrec.slice().sort((a, b) => b.crecimiento - a.crecimiento)[0];
+    lect.push({ tono: 'bueno', texto: 'Cuenta destacada: ' + c.marca + ' en ' + c.red + ' con ' + signo(c.crecimiento) + ' de crecimiento.' });
+    cuentasCrec.filter(x => x.nuevos < 0).forEach(x => lect.push({ tono: 'malo', texto: x.marca + ' en ' + x.red + ' perdió ' + n(Math.abs(x.nuevos)) + ' seguidores.' }));
+  }
+  const conEng = porMarca.filter(x => x.engagement !== null);
+  if (conEng.length) {
+    const e = conEng.slice().sort((a, b) => b.engagement - a.engagement)[0];
+    lect.push({ tono: 'bueno', texto: 'Mejor tasa de interacción: ' + e.marca + ' con ' + n(e.engagement) + '% (interacciones ÷ alcance).' });
+  }
+  const conRed = porRed.filter(x => x.crecimiento !== null);
+  if (conRed.length >= 2) {
+    const r = conRed.slice().sort((a, b) => b.crecimiento - a.crecimiento)[0];
+    lect.push({ tono: 'neutro', texto: 'Por red social, ' + r.red + ' fue la de mayor crecimiento (' + signo(r.crecimiento) + ').' });
+  }
+  const sinDatos = porCuenta.filter(x => x.mesesConDatos < meses.length).map(x => x.marca + ' ' + x.red);
+  if (sinDatos.length) lect.push({ tono: 'neutro', texto: 'Faltan datos de algunos meses en: ' + sinDatos.join(', ') + '. Regístralos para un análisis completo.' });
+
+  return { desde: desdeMes, hasta: hastaMes, base: base, marca: marca, meses: meses, total: total,
+    porMarca: porMarca, porRed: porRed, porCuenta: porCuenta, mensual: mensual, detalle: detalle, lecturas: lect };
+}
+
+/** Exporta el reporte a un Google Sheet en la carpeta «MarketingVH · Reportes» y devuelve su enlace. */
+function exportarReporteRedes(token, desdeMes, hastaMes, marca) {
+  const rep = getReporteRedes(token, desdeMes, hastaMes, marca);
+  const nombreMes = m => MESES_ES[Number(m.slice(5)) - 1].charAt(0) + MESES_ES[Number(m.slice(5)) - 1].slice(1).toLowerCase() + ' ' + m.slice(0, 4);
+  const titulo = 'Reporte redes sociales · ' + nombreMes(rep.desde) + ' a ' + nombreMes(rep.hasta) + (rep.marca ? ' · ' + rep.marca : '');
+  const ss = SpreadsheetApp.create(titulo);
+  ss.setSpreadsheetLocale('es_PE');
+  const carpetas = DriveApp.getFoldersByName('MarketingVH · Reportes');
+  const carpeta = carpetas.hasNext() ? carpetas.next() : DriveApp.createFolder('MarketingVH · Reportes');
+  DriveApp.getFileById(ss.getId()).moveTo(carpeta);
+
+  const v = x => (x === null || x === undefined ? '' : x);
+  const escribir = (sh, cabecera, filas, tituloHoja) => {
+    sh.getRange(1, 1).setValue(tituloHoja).setFontWeight('bold').setFontSize(13);
+    sh.getRange(2, 1).setValue(titulo + ' · comparado con ' + nombreMes(rep.base)).setFontColor('#666666');
+    sh.getRange(4, 1, 1, cabecera.length).setValues([cabecera]).setFontWeight('bold').setBackground('#1f2937').setFontColor('#ffffff');
+    if (filas.length) sh.getRange(5, 1, filas.length, cabecera.length).setValues(filas);
+    sh.setFrozenRows(4);
+    sh.autoResizeColumns(1, cabecera.length);
+  };
+  const cab = ['Seguidores inicio', 'Seguidores fin', 'Nuevos', 'Crecimiento %', 'Alcance', 'Visualizaciones', 'Interacciones',
+    'Publicaciones', 'Interacción % (inter./alcance)', 'Interacciones por publicación'];
+  const vals = x => [v(x.seguidoresInicio), v(x.seguidoresFin), v(x.nuevos), v(x.crecimiento), x.alcance, x.visualizaciones,
+    x.interacciones, x.publicaciones, v(x.engagement), v(x.interaccionesPorPublicacion)];
+
+  const hResumen = ss.getSheets()[0].setName('Resumen');
+  escribir(hResumen, ['Marca'].concat(cab), rep.porMarca.concat([rep.total]).map(x => [x.marca].concat(vals(x))), 'Resumen por marca');
+  const fila = 6 + rep.porMarca.length + 2;
+  hResumen.getRange(fila, 1).setValue('Lecturas').setFontWeight('bold');
+  rep.lecturas.forEach((l, i) => hResumen.getRange(fila + 1 + i, 1).setValue('• ' + l.texto));
+  escribir(ss.insertSheet('Por cuenta'), ['Marca', 'Red', 'Cuenta'].concat(cab), rep.porCuenta.map(x => [x.marca, x.red, x.usuario].concat(vals(x))), 'Detalle por cuenta');
+  escribir(ss.insertSheet('Por red'), ['Red'].concat(cab), rep.porRed.map(x => [x.red].concat(vals(x))), 'Resumen por red social');
+  escribir(ss.insertSheet('Mes a mes'), ['Marca', 'Red', 'Cuenta', 'Mes', 'Seguidores', 'Alcance', 'Visualizaciones', 'Interacciones', 'Publicaciones'],
+    rep.detalle.map(x => [x.marca, x.red, x.usuario, nombreMes(x.mes), v(x.seguidores), v(x.alcance), v(x.visualizaciones), v(x.interacciones), v(x.publicaciones)]),
+    'Evolución mensual por cuenta');
+  return { url: ss.getUrl(), titulo: titulo };
+}

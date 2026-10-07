@@ -8,12 +8,13 @@ const ESQUEMA = {
   Usuarios: ['id', 'nombre', 'correo', 'rol', 'area', 'pin_hash', 'jornada_horas', 'activo', 'creado'],
   Tareas: ['id', 'titulo', 'descripcion', 'usuario_id', 'creada_por', 'prioridad', 'estado',
     'creada', 'vence', 'completada', 'peso', 'nota', 'actualizada',
-    'marca', 'campana', 'pieza', 'tipo', 'solicitud_id'],
+    'marca', 'campana', 'pieza', 'tipo', 'solicitud_id', 'archivada'],
   Solicitudes: ['id', 'titulo', 'descripcion', 'tipo', 'marca', 'solicitante_id', 'prioridad',
     'fecha_entrega', 'estado', 'tarea_id', 'creada', 'actualizada', 'nota'],
   Horas: ['id', 'usuario_id', 'fecha', 'inicio', 'fin', 'horas', 'funcion', 'marca', 'tarea_id',
     'descripcion', 'creado', 'estado'],
-  Asistencia: ['id', 'usuario_id', 'fecha', 'entrada', 'salida', 'tipo_dia', 'horas', 'extra'],
+  // Marcación de entrada y salida por día (las horas y el sobretiempo se calculan al leer).
+  Asistencia: ['id', 'usuario_id', 'fecha', 'entrada', 'salida', 'tipo_dia', 'horas', 'extra', 'actualizado', 'nota'],
   Sobretiempo: ['id', 'usuario_id', 'fecha', 'inicio', 'fin', 'horas', 'motivo', 'evento_id', 'estado',
     'revisado_por', 'nota', 'creado'],
   // Compensaciones de sobretiempo (días u horas libres, pago) registradas por el admin / RR. HH.
@@ -22,7 +23,9 @@ const ESQUEMA = {
     'empresa', 'hora_inicio', 'hora_fin', 'creado_por', 'actualizada'],
   Cobertura: ['id', 'evento_id', 'usuario_id', 'rol_en_evento', 'estado', 'zona', 'horario', 'nota'],
   Agenda: ['id', 'fecha', 'hora', 'titulo', 'tipo', 'marca', 'campana', 'responsable_id', 'estado',
-    'detalle', 'origen', 'creado_por', 'actualizada', 'red', 'formato', 'pilar', 'enlace', 'estado_material'],
+    'detalle', 'origen', 'creado_por', 'actualizada', 'red', 'formato', 'pilar', 'enlace', 'estado_material',
+    'privado', 'recordatorio_min', 'recordar_en', 'recordado'],
+  Notificaciones: ['id', 'usuario_id', 'fecha_hora', 'tipo', 'titulo', 'detalle', 'enlace', 'leida', 'clave', 'actualizada'],
   Parrillas: ['id', 'marca', 'nombre', 'url', 'activo', 'creado', 'sheet_id', 'ultima_sync', 'estado_sync'],
   // Fuentes de pauta: Google Sheets del equipo que se leen y consolidan en Pauta_diaria.
   Fuentes_pauta: ['id', 'marca', 'nombre', 'url', 'hoja', 'activo', 'creado', 'ultima_sync', 'estado_sync', 'filas', 'moneda'],
@@ -269,4 +272,15 @@ function log_(usuarioId, accion, idAfectado, detalle) {
     id_afectado: idAfectado || '',
     detalle: detalle || ''
   });
+}
+
+/** ¿La persona está en la lista de Config (por primer nombre)? Ej.: excluidoDe_(u, 'excluidos_eventos'). */
+function excluidoDe_(u, clave) {
+  const primero = s => normal_(s).split(' ')[0];
+  return lista_(clave).map(primero).indexOf(primero(u.nombre)) >= 0;
+}
+
+function usuarioPorNombre_(nombre) {
+  const n = normal_(nombre).split(' ')[0];
+  return usuarios_().find(x => x.activo === 'SI' && normal_(x.nombre).split(' ')[0] === n) || null;
 }

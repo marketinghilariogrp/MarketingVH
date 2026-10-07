@@ -4,6 +4,7 @@
   VISTAS.contenido = {
     titulo: 'Contenido y parrillas',
     async pintar() {
+      if (!esGestor()) return pintarParrillasLectura();
       const desde = sumarDias(S.hoy, -30);
       const hasta = sumarDias(S.hoy, 45);
       const [parrillas, agenda] = await Promise.all([api('listarParrillas'), api('listarAgenda', desde, hasta)]);
@@ -89,6 +90,18 @@
     }
   };
 
+  /** Vista de solo lectura para colaboradores: accesos directos a la parrilla de cada marca. */
+  async function pintarParrillasLectura() {
+    const parrillas = await api('listarParrillas');
+    if (S.vista !== 'contenido') return;
+    $('#vista').innerHTML = `
+      <p class="sub">Accesos directos a las parrillas de contenido de cada marca. Se abren en Google Sheets.</p>
+      <div class="rejilla-parrillas">${parrillas.map(p => `<a class="card parrilla-acceso" href="${esc(p.url)}" target="_blank" rel="noopener">
+          <span class="logo">${esc(p.marca.slice(0, 2).toUpperCase())}</span>
+          <div><b>${esc(p.marca)}</b><small>${esc(p.nombre)}</small></div><span class="flecha">↗</span></a>`).join('')
+        || '<p class="vacio">Aún no hay parrillas.</p>'}</div>`;
+  }
+
   function formParrilla(p) {
     const x = p || {};
     modal(p ? 'Editar parrilla' : 'Vincular parrilla', `
@@ -115,6 +128,7 @@
   VISTAS.redes = {
     titulo: 'Redes sociales',
     async pintar() {
+      if (S.pestanaRedes === 'reporte') return pintarReporteRedes();
       const mes = S.mesRedes || sumarMes(S.hoy.slice(0, 7), -1);
       const d = await api('listarRedes', mes);
       if (S.vista !== 'redes') return;
@@ -124,6 +138,7 @@
         return `<small class="${v >= 0 ? 'sube' : 'baja'}">${v >= 0 ? '▲' : '▼'} ${fmtNum(Math.abs(v), 1)}%</small>`;
       })());
       $('#vista').innerHTML = `
+        ${pestanasRedes()}
         <div class="toolbar">
           ${navMes(mes)}
           <div class="controles"><button class="btn" id="bCuentaRed">+ Cuenta</button><button class="btn primario" id="bGuardarRedes">Guardar ${mesTexto(mes)}</button></div>
@@ -141,6 +156,7 @@
                 ${c.actual && c.anterior ? varia(c.actual[k], c.anterior[k]) : ''}</td>`).join('')}</tr>`).join('')}</tbody>
           </table></div></section>`).join('')}</form>`;
       enlazarNavMes($('#vista'), mes, m => { S.mesRedes = m; repintar(); });
+      enlazarPestanasRedes();
       $('#bGuardarRedes').onclick = async e => {
         const filas = $$('tr[data-cuenta]').map(tr => {
           const o = { cuenta_id: tr.dataset.cuenta };
@@ -161,4 +177,117 @@
         async x => { await api('guardarCuentaRed', x); aviso('Cuenta agregada'); repintar(); }, 'Agregar');
     }
   };
+
+  /* ---------- Redes: reporte por rango de meses (comparativa, gráficos, exportar) ---------- */
+
+  function pestanasRedes() {
+    const p = S.pestanaRedes || 'registro';
+    return `<div class="pestanas no-print"><button class="pestana ${p === 'registro' ? 'activo' : ''}" data-pr="registro">Registrar mes</button>
+      <button class="pestana ${p === 'reporte' ? 'activo' : ''}" data-pr="reporte">Reporte y comparativa</button></div>`;
+  }
+  function enlazarPestanasRedes() {
+    $$('[data-pr]').forEach(b => { b.onclick = () => { S.pestanaRedes = b.dataset.pr; repintar(); }; });
+  }
+
+  let graficosRedes = [];
+
+  async function pintarReporteRedes() {
+    graficosRedes.forEach(g => g.destroy());
+    graficosRedes = [];
+    const hasta = S.hastaRep || sumarMes(S.hoy.slice(0, 7), -1);
+    const desde = S.desdeRep || sumarMes(hasta, -3);
+    const marca = S.marcaRep || '';
+    const d = await api('getReporteRedes', desde, hasta, marca);
+    if (S.vista !== 'redes') return;
+    const meses = [];
+    for (let m = '2026-01'; m <= '2027-12'; m = sumarMes(m, 1)) meses.push([m, mesTexto(m)]);
+    const n = v => (v === null || v === undefined ? '—' : fmtNum(v));
+    const pct = v => (v === null || v === undefined ? '—' : `<span class="${v >= 0 ? 'sube' : 'baja'}">${v > 0 ? '+' : ''}${fmtNum(v, 1)}%</span>`);
+    const tono = { bueno: 'sube', malo: 'baja', neutro: '' };
+    const icon = { bueno: '▲', malo: '▼', neutro: '●' };
+    const fila = (x, primeras) => `<tr>${primeras}<td class="num">${n(x.seguidoresInicio)}</td><td class="num">${n(x.seguidoresFin)}</td>
+      <td class="num">${x.nuevos === null ? '—' : (x.nuevos > 0 ? '+' : '') + fmtNum(x.nuevos)}</td><td class="num">${pct(x.crecimiento)}</td>
+      <td class="num">${n(x.alcance)}</td><td class="num">${n(x.visualizaciones)}</td><td class="num">${n(x.interacciones)}</td>
+      <td class="num">${n(x.publicaciones)}</td><td class="num">${x.engagement === null ? '—' : fmtNum(x.engagement, 1) + '%'}</td></tr>`;
+    const cab = '<th class="num">Seguidores inicio</th><th class="num">Seguidores fin</th><th class="num">Nuevos</th><th class="num">Crecimiento</th>' +
+      '<th class="num">Alcance</th><th class="num">Visualizaciones</th><th class="num">Interacciones</th><th class="num">Publicaciones</th><th class="num">Interacción</th>';
+
+    $('#vista').innerHTML = `
+      ${pestanasRedes()}
+      <div class="toolbar no-print">
+        <div class="controles">
+          <label class="en-linea">De <select id="rDesde">${opciones(meses, desde)}</select></label>
+          <label class="en-linea">a <select id="rHasta">${opciones(meses, hasta)}</select></label>
+          <select id="rMarca" aria-label="Marca">${opciones(S.cfg.marcas, marca, 'Todas las marcas')}</select>
+        </div>
+        <div class="controles">
+          <button class="btn" id="bExportarRedes">Exportar a Google Sheets</button>
+          <button class="btn primario" id="bImprimirRedes">Imprimir / PDF</button>
+        </div>
+      </div>
+      <header class="cab-informe">
+        <div class="marca"><span class="logo">VH</span><div><strong>Reporte de redes sociales · ${mesTexto(d.desde)} a ${mesTexto(d.hasta)}</strong>
+          <small>${esc(marca || 'Todas las marcas')} · crecimiento medido contra ${mesTexto(d.base)}</small></div></div>
+        <small class="sub">Generado el ${fmtFecha(S.hoy)}</small>
+      </header>
+      <section class="card"><h3>Lecturas</h3>
+        <ul class="lecturas">${d.lecturas.map(l => `<li class="${tono[l.tono]}"><span>${icon[l.tono]}</span>${esc(l.texto)}</li>`).join('') || '<li>Aún no hay datos suficientes en este rango.</li>'}</ul>
+      </section>
+      <div class="kpis">
+        <div class="kpi"><span class="kpi-v">${n(d.total.seguidoresFin)}</span><span class="kpi-k">Seguidores al cierre</span></div>
+        <div class="kpi"><span class="kpi-v">${d.total.nuevos === null ? '—' : (d.total.nuevos > 0 ? '+' : '') + fmtNum(d.total.nuevos)}</span><span class="kpi-k">Seguidores nuevos</span>${d.total.crecimiento === null ? '' : `<small>${pct(d.total.crecimiento)}</small>`}</div>
+        <div class="kpi"><span class="kpi-v">${n(d.total.alcance)}</span><span class="kpi-k">Alcance</span></div>
+        <div class="kpi"><span class="kpi-v">${n(d.total.visualizaciones)}</span><span class="kpi-k">Visualizaciones</span></div>
+        <div class="kpi"><span class="kpi-v">${n(d.total.interacciones)}</span><span class="kpi-k">Interacciones</span></div>
+        <div class="kpi"><span class="kpi-v">${d.total.engagement === null ? '—' : fmtNum(d.total.engagement, 1) + '%'}</span><span class="kpi-k">Tasa de interacción</span></div>
+      </div>
+      <div class="rejilla">
+        <section class="card span2"><h3>Seguidores por marca, mes a mes</h3><div class="lienzo alto"><canvas id="gRepSeg"></canvas></div></section>
+        <section class="card"><h3>Alcance por marca</h3><div class="lienzo"><canvas id="gRepAlc"></canvas></div></section>
+        <section class="card"><h3>Crecimiento por red social</h3><div class="lienzo"><canvas id="gRepRed"></canvas></div></section>
+      </div>
+      <section class="card sin-pad"><div class="cab-card pad"><h3>Por marca</h3></div><div class="tabla-caja plana"><table>
+        <thead><tr><th>Marca</th>${cab}</tr></thead>
+        <tbody>${d.porMarca.map(x => fila(x, `<td><b>${esc(x.marca)}</b></td>`)).join('')}${fila(d.total, '<td><b>Total</b></td>')}</tbody></table></div></section>
+      <section class="card sin-pad"><div class="cab-card pad"><h3>Por cuenta</h3></div><div class="tabla-caja plana"><table>
+        <thead><tr><th>Cuenta</th>${cab}</tr></thead>
+        <tbody>${d.porCuenta.map(x => fila(x, `<td><b>${esc(x.marca)}</b> · ${esc(x.red)}<small>${esc(x.usuario)}</small></td>`)).join('')}</tbody></table></div></section>
+      <section class="card sin-pad"><div class="cab-card pad"><h3>Por red social</h3></div><div class="tabla-caja plana"><table>
+        <thead><tr><th>Red</th>${cab}</tr></thead>
+        <tbody>${d.porRed.map(x => fila(x, `<td><b>${esc(x.red)}</b></td>`)).join('')}</tbody></table></div></section>
+      <section class="card sin-pad"><div class="cab-card pad"><h3>Evolución mensual por marca</h3></div><div class="tabla-caja plana"><table>
+        <thead><tr><th>Marca</th><th>Mes</th><th class="num">Seguidores</th><th class="num">Alcance</th><th class="num">Visualizaciones</th><th class="num">Interacciones</th><th class="num">Publicaciones</th></tr></thead>
+        <tbody>${d.mensual.map(m => m.meses.map((x, i) => `<tr><td>${i ? '' : '<b>' + esc(m.marca) + '</b>'}</td><td>${mesTexto(x.mes)}</td>
+          <td class="num">${n(x.seguidores)}</td><td class="num">${n(x.alcance)}</td><td class="num">${n(x.visualizaciones)}</td>
+          <td class="num">${n(x.interacciones)}</td><td class="num">${n(x.publicaciones)}</td></tr>`).join('')).join('')}</tbody></table></div></section>`;
+
+    const crear = (id, config) => {
+      const el = document.getElementById(id);
+      if (!el || typeof Chart === 'undefined') return;
+      config.options = Object.assign({ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }, config.options || {});
+      graficosRedes.push(new Chart(el, config));
+    };
+    const etiquetas = d.meses.map(m => MESES[Number(m.slice(5)) - 1].slice(0, 3) + ' ' + m.slice(2, 4));
+    crear('gRepSeg', { type: 'line', data: { labels: etiquetas, datasets: d.mensual.map((m, i) => ({ label: m.marca,
+      data: m.meses.map(x => x.seguidores), borderColor: PALETA[i % PALETA.length], backgroundColor: PALETA[i % PALETA.length], tension: .3, spanGaps: true })) } });
+    crear('gRepAlc', { type: 'bar', data: { labels: d.porMarca.map(x => x.marca), datasets: [{ label: 'Alcance', data: d.porMarca.map(x => x.alcance), backgroundColor: PALETA[0], borderRadius: 4 }] } });
+    crear('gRepRed', { type: 'bar', data: { labels: d.porRed.map(x => x.red), datasets: [{ label: 'Crecimiento %', data: d.porRed.map(x => x.crecimiento), backgroundColor: PALETA[1], borderRadius: 4 }] } });
+
+    enlazarPestanasRedes();
+    $('#rDesde').onchange = e => { S.desdeRep = e.target.value; repintar(); };
+    $('#rHasta').onchange = e => { S.hastaRep = e.target.value; repintar(); };
+    $('#rMarca').onchange = e => { S.marcaRep = e.target.value; repintar(); };
+    $('#bImprimirRedes').onclick = () => window.print();
+    $('#bExportarRedes').onclick = async e => {
+      e.target.disabled = true;
+      e.target.textContent = 'Generando…';
+      try {
+        const r = await api('exportarReporteRedes', desde, hasta, marca);
+        modal('Reporte exportado', `<p>Se creó «${esc(r.titulo)}» en tu Drive, carpeta «MarketingVH · Reportes».</p>
+          <p><a class="btn primario" href="${esc(r.url)}" target="_blank" rel="noopener">Abrir en Google Sheets ↗</a></p>`, null);
+      } catch (err) { aviso(err.message, 'error'); }
+      e.target.disabled = false;
+      e.target.textContent = 'Exportar a Google Sheets';
+    };
+  }
 </script>

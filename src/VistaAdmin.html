@@ -88,4 +88,49 @@
       };
     }
   };
+
+  /* ---------- Notificaciones ---------- */
+
+  const ICONO_NOTIF = { requerimiento: '🎨', recordatorio: '⏰' };
+
+  function haceCuanto(f) {
+    const d = new Date(f.replace(' ', 'T'));
+    const min = Math.round((Date.now() - d.getTime()) / 60000);
+    if (isNaN(min)) return f;
+    if (min < 1) return 'hace un momento';
+    if (min < 60) return `hace ${min} min`;
+    if (min < 1440) return `hace ${Math.round(min / 60)} h`;
+    return fmtFecha(f) + ' ' + f.slice(11, 16);
+  }
+
+  VISTAS.notificaciones = {
+    titulo: 'Notificaciones',
+    async pintar() {
+      const lista = await api('listarNotificaciones');
+      if (S.vista !== 'notificaciones') return;
+      S.noLeidas = lista.filter(n => !n.leida).length;
+      pintarInsignia();
+      $('#vista').innerHTML = `
+        <div class="toolbar">
+          <p class="sub">${S.noLeidas ? `Tienes <b>${S.noLeidas}</b> sin leer.` : 'Estás al día.'} Aquí llegan los requerimientos de diseño y tus recordatorios.</p>
+          ${S.noLeidas ? '<button class="btn" id="bLeerTodas">Marcar todas como leídas</button>' : ''}
+        </div>
+        <section class="card sin-pad">
+          ${lista.length ? `<ul class="notifs">${lista.map(n => `<li class="${n.leida ? '' : 'nueva'}" data-id="${esc(n.id)}">
+            <span class="notif-ico">${ICONO_NOTIF[n.tipo] || '🔔'}</span>
+            <div><b>${esc(n.titulo)}</b><small>${esc(n.detalle)}</small><small class="sub">${haceCuanto(n.fecha)}</small></div>
+            ${n.enlace ? `<a class="btn mini" href="${esc(n.enlace)}" target="_blank" rel="noopener" data-abrir="${esc(n.id)}">Abrir ↗</a>` : ''}
+          </li>`).join('')}</ul>` : '<p class="vacio pad-x">No tienes notificaciones.</p>'}
+        </section>`;
+      const marcar = async ids => {
+        try { await api('marcarNotificaciones', ids); } catch (e) { return aviso(e.message, 'error'); }
+        repintar();
+      };
+      if ($('#bLeerTodas')) $('#bLeerTodas').onclick = () => marcar([]);
+      $('#vista').onclick = e => {
+        const li = e.target.closest('li.nueva');
+        if (li) marcar([li.dataset.id]);
+      };
+    }
+  };
 </script>

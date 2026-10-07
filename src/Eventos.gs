@@ -3,8 +3,28 @@
  * El conteo mensual y el índice de equidad reemplazan al «Contador automático» del Excel.
  */
 
-const ESTADOS_EVENTO = ['programado', 'realizado', 'cancelado'];
+const ESTADOS_EVENTO = ['programado', 'realizado', 'cancelado']; // 'eliminado' se usa solo al borrar
 const ESTADOS_COBERTURA = ['asignado', 'cubierto', 'ausente'];
+
+/** Quiénes entran en la rotación: activos, no admin, salvo Config.excluidos_eventos (home office). */
+function cubreEventos_(x) {
+  return x.activo === 'SI' && x.rol !== 'admin' && !excluidoDe_(x, 'excluidos_eventos');
+}
+
+/** Elimina un evento creado por error (solo admin). Deja de verse en calendario, rotación e informes. */
+function eliminarEvento(token, id) {
+  const u = sesion_(token);
+  exigirAdmin_(u);
+  return conLock_(() => {
+    const ev = leerTabla_('Eventos').find(x => x.id === id);
+    if (!ev || ev.estado === 'eliminado') throw new Error('Evento no encontrado.');
+    ev.estado = 'eliminado';
+    ev.actualizada = ahora_();
+    escribirFila_('Eventos', ev);
+    log_(u.id, 'eliminar_evento', ev.id, ev.fecha + ' ' + ev.titulo);
+    return true;
+  });
+}
 
 function mesValido_(mes) {
   mes = texto_(mes, 7);
@@ -23,7 +43,7 @@ function eventosConPersonal_(filtro) {
       zona: c.zona, horario: c.horario, estado: c.estado, nota: c.nota
     });
   });
-  return leerTabla_('Eventos').filter(filtro).map(e => ({
+  return leerTabla_('Eventos').filter(e => e.estado !== 'eliminado' && filtro(e)).map(e => ({
     id: e.id, fecha: e.fecha, titulo: e.titulo, empresa: e.empresa, lugar: e.lugar, detalle: e.detalle,
     hora_inicio: e.hora_inicio, hora_fin: e.hora_fin, estado: e.estado, personal: personal[e.id] || []
   })).sort((a, b) => (a.fecha + a.hora_inicio).localeCompare(b.fecha + b.hora_inicio));
@@ -35,7 +55,7 @@ function conteoEventos_(eventos) {
   eventos.filter(e => e.estado !== 'cancelado').forEach(e => {
     e.personal.filter(p => p.estado !== 'ausente').forEach(p => { cuenta[p.usuario_id] = (cuenta[p.usuario_id] || 0) + 1; });
   });
-  const personas = usuarios_().filter(x => cuenta[x.id] || (x.activo === 'SI' && x.rol !== 'admin'));
+  const personas = usuarios_().filter(x => cuenta[x.id] || cubreEventos_(x));
   const total = personas.reduce((s, x) => s + (cuenta[x.id] || 0), 0);
   const promedio = personas.length ? total / personas.length : 0;
   return personas.map(x => {
@@ -59,7 +79,7 @@ function listarEventos(token, mes) {
     h.meses[Number(e.fecha.slice(5, 7)) - 1]++;
     h.eventos.push({ fecha: e.fecha, titulo: e.titulo, empresa: e.empresa, funcion: p.funcion });
   }));
-  usuarios_().filter(x => x.activo === 'SI' && x.rol !== 'admin' && !historial[x.id]).forEach(x => {
+  usuarios_().filter(x => cubreEventos_(x) && !historial[x.id]).forEach(x => {
     historial[x.id] = { usuario_id: x.id, nombre: x.nombre, meses: Array(12).fill(0), eventos: [] };
   });
 
@@ -91,7 +111,7 @@ function guardarEvento(token, d) {
   }
 
   const funciones = lista_('funciones_evento');
-  const activos = usuarios_().filter(x => x.activo === 'SI').map(x => x.id);
+  const activos = usuarios_().filter(x => x.activo === 'SI' && !excluidoDe_(x, 'excluidos_eventos')).map(x => x.id);
   const personal = (Array.isArray(d.personal) ? d.personal : []).map(p => ({
     usuario_id: texto_(p.usuario_id, 40),
     funcion: opcion_(p.funcion, funciones, 'Elige la función de cada persona.'),

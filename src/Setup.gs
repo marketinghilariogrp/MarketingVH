@@ -26,7 +26,16 @@ const CONFIG_INICIAL = [
     '2027-11-01,2027-12-08,2027-12-09,2027-12-25', 'Feriados (yyyy-MM-dd) separados por coma'],
   ['moneda', 'S/', 'Símbolo de soles'],
   ['marcas_en_soles', 'Nexo', 'Marcas cuya cuenta publicitaria está en soles (PEN); las demás se muestran en dólares ($) si la hoja no lo indica'],
-  ['umbral_variacion', '30', 'Variación (%) de pauta semana contra semana que genera alerta']
+  ['umbral_variacion', '30', 'Variación (%) de pauta semana contra semana que genera alerta'],
+  ['excluidos_eventos', 'Chris,Cesi', 'Personas que no cubren eventos (home office): no salen en la rotación'],
+  ['excluidos_horas', 'Chris,Cesi', 'Personas que no marcan horas (home office)'],
+  ['horas_semana_practicante', '25', 'Horas semanales de los practicantes; lo que pase de esto es sobretiempo'],
+  ['tipos_agenda_personal', 'Reunión,Recordatorio,Pendiente personal,Cita,Otro', 'Tipos de la agenda personal de cada persona'],
+  ['hoja_requerimientos', 'https://docs.google.com/spreadsheets/d/1aRccmzKT2oMAkqdoGbSPsnxARFnnWl3rMO-AIqIq9jo/edit',
+    'Google Sheet de requerimientos de diseño: cada cambio genera una notificación'],
+  ['notif_requerimientos_todos', 'Gabriela', 'Quiénes reciben TODAS las notificaciones de requerimientos'],
+  ['notif_requerimientos_reglas', 'Nexo,V&C,Vyc:Blue; Academia VHB,Marca Personal,Ede 2.0,VH CONSULTING:Chris',
+    'Pestañas:persona que además recibe esos avisos (reglas separadas por punto y coma)']
 ];
 
 // Equipo actual (octubre 2026). La migración 2 lo deja así y desactiva a quienes ya no están.
@@ -227,14 +236,18 @@ function prepararHoja_(ss, nombre) {
  * - copiaSemanal: los domingos, copia de seguridad del archivo de datos en Drive
  */
 function instalarAutomatizaciones() {
-  const funciones = ['pautaDiaria', 'sincronizarFuentes', 'alertasDiarias', 'copiaSemanal'];
+  const funciones = ['pautaDiaria', 'sincronizarFuentes', 'alertasDiarias', 'copiaSemanal', 'revisarRecordatorios', 'alEditarRequerimientos'];
   ScriptApp.getProjectTriggers()
     .filter(t => funciones.indexOf(t.getHandlerFunction()) >= 0)
     .forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('sincronizarFuentes').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('alertasDiarias').timeBased().everyDays(1).atHour(8).create();
   ScriptApp.newTrigger('copiaSemanal').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(23).create();
-  console.log('Automatizaciones instaladas: sincronizarFuentes (cada hora), alertasDiarias (8 a. m.), copiaSemanal (domingos).');
+  ScriptApp.newTrigger('revisarRecordatorios').timeBased().everyMinutes(5).create();
+  const hojaReq = idDeUrl_(config_().hoja_requerimientos || '');
+  if (hojaReq) ScriptApp.newTrigger('alEditarRequerimientos').forSpreadsheet(hojaReq).onEdit().create();
+  console.log('Automatizaciones instaladas: sincronizarFuentes (cada hora), alertasDiarias (8 a. m.), copiaSemanal (domingos), ' +
+    'revisarRecordatorios (cada 5 min)' + (hojaReq ? ', alEditarRequerimientos (al editar la hoja de requerimientos).' : '.'));
 }
 
 function copiaSemanal() {

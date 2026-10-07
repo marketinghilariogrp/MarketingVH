@@ -32,8 +32,11 @@
               : '<p class="vacio">No hay eventos programados.</p>'}
           </section>
           <section class="card">
-            <h3>Horas por función · este mes</h3>
-            ${barras(d.horasPorFuncion, { fmt: v => fmtNum(v, 1) + ' h', vacio: 'Aún no hay horas registradas este mes.' })}
+            <h3>Sobretiempo · este mes</h3>
+            <p class="sub">Compensable = en días con evento asignado · no compensable = sin evento</p>
+            ${barras(d.sobretiempoMes.map(x => ({ k: x.nombre, v: Math.round((x.compensable + x.noCompensable) * 100) / 100,
+              extra: fmtNum(x.compensable, 1) + ' comp. · ' + fmtNum(x.noCompensable, 1) + ' no comp.', clase: x.noCompensable > x.compensable ? 'bajo' : '' })),
+              { fmt: v => fmtNum(v, 1) + ' h', vacio: 'Sin sobretiempo este mes.' })}
           </section>
           <section class="card">
             <h3>Producción del mes</h3>

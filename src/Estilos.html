@@ -330,6 +330,60 @@
   .celda-n { border: 0; background: var(--columna); border-radius: 6px; min-width: 28px; padding: 2px 6px; font-weight: 700; cursor: pointer; }
   .celda-n:hover { background: var(--marca); color: #fff; }
 
+  /* Notificaciones */
+  .campana { margin-left: auto; position: relative; }
+  .insignia { position: absolute; top: 2px; right: 0; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--peligro);
+    color: #fff; font-size: 10.5px; font-weight: 700; display: grid; place-items: center; line-height: 1; }
+  .nav .insignia { position: static; margin-left: auto; }
+  .insignia[hidden] { display: none; }
+  .notifs { list-style: none; margin: 0; padding: 0; }
+  .notifs li { display: flex; gap: 12px; align-items: flex-start; padding: 12px 18px; border-bottom: 1px solid var(--borde); }
+  .notifs li:last-child { border-bottom: 0; }
+  .notifs li.nueva { background: color-mix(in srgb, var(--marca) 7%, transparent); cursor: pointer; }
+  .notifs li.nueva b::after { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--marca); margin-left: 6px; vertical-align: middle; }
+  .notifs li > div { flex: 1; min-width: 0; }
+  .notifs small { display: block; color: var(--texto); opacity: .85; margin-top: 2px; overflow-wrap: anywhere; }
+  .notifs small.sub { color: var(--suave); opacity: 1; }
+  .notif-ico { font-size: 20px; line-height: 1.2; }
+
+  /* Mi semana (marcación de ingreso y salida) */
+  .semana { display: grid; gap: 8px; margin: 8px 0 12px; }
+  .dia-marca { display: grid; grid-template-columns: minmax(140px, 1.2fr) 1fr 1fr 110px; gap: 10px; align-items: end; padding: 10px 12px;
+    border: 1px solid var(--borde); border-radius: 10px; background: var(--fondo); }
+  .dia-marca.hoy { border-color: var(--marca); box-shadow: inset 3px 0 0 var(--marca); }
+  .dia-marca.libre { opacity: .75; }
+  .dia-nombre small { display: block; color: var(--suave); font-size: 12px; overflow-wrap: anywhere; }
+  .dia-horas { font-weight: 700; text-align: right; padding-bottom: 9px; font-variant-numeric: tabular-nums; }
+  .dia-marca input { background: var(--panel); }
+  .controles.sin-salto { flex-wrap: nowrap; }
+  .controles.sin-salto select { min-width: 0; flex: 1 1 auto; }
+
+  /* Calendario: vista de día por horas */
+  .ag-personal { background: #475569 !important; }
+  .item-dia.ag-personal { border-left-color: #475569; }
+  .todo-dia { display: grid; gap: 6px; }
+  .todo-dia h4 { margin: 0 0 2px; }
+  .bloque-fijo, .bloque { border: 0; color: #fff; text-align: left; border-radius: 8px; padding: 6px 10px; cursor: pointer; overflow: hidden; }
+  .bloque-fijo small, .bloque small { display: block; opacity: .9; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bloque-fijo b, .bloque b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tachado { text-decoration: line-through; opacity: .55; }
+  .dia-linea { padding: 8px 12px 8px 0; }
+  .horas { position: relative; margin-left: 58px; }
+  .hora { position: absolute; left: -58px; right: 0; border-top: 1px solid var(--borde); height: 0; }
+  .hora span { position: absolute; left: 6px; top: -9px; font-size: 11.5px; color: var(--suave); background: var(--panel); padding-right: 6px; }
+  .bloques { position: absolute; inset: 0; }
+  .bloque { position: absolute; box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
+  .ahora { position: absolute; left: -6px; right: 0; border-top: 2px solid var(--peligro); z-index: 2; }
+  .ahora::before { content: ''; position: absolute; left: -4px; top: -6px; width: 10px; height: 10px; border-radius: 50%; background: var(--peligro); }
+
+  /* Parrillas: accesos directos (colaboradores) */
+  .rejilla-parrillas { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .parrilla-acceso { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--texto); }
+  .parrilla-acceso:hover { box-shadow: 0 0 0 2px var(--marca); }
+  .parrilla-acceso div { flex: 1; min-width: 0; }
+  .parrilla-acceso small { display: block; color: var(--suave); }
+  .parrilla-acceso .flecha { color: var(--marca); font-size: 18px; }
+
   /* Modal */
   .fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: grid; place-items: center; padding: 16px; z-index: 40; }
   .modal { background: var(--panel); border-radius: 14px; padding: 20px 22px; width: min(540px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; display: grid; gap: 12px; }
@@ -370,6 +424,10 @@
     tr.clic:hover td { background: none; }
     tr.clic:active { background: var(--columna); }
     .num-input { width: 100%; text-align: left; }
+    .dia-marca { grid-template-columns: 1fr 1fr; }
+    .dia-nombre { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+    .dia-horas { grid-column: 1 / -1; text-align: left; padding: 0; }
+    .top h1 { flex: 1; }
     /* Tablero: una columna a la vez, elegida con pestañas */
     .solo-celular { display: flex !important; }
     .pestanas.solo-celular { flex-wrap: nowrap; overflow-x: auto; }

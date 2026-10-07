@@ -63,7 +63,10 @@ function tareaCliente_(t, u, cfg, nombres) {
     acciones: (TRANSICIONES[t.estado] || [])
       .filter(tr => puede_(u, tr.quien, t, cfg))
       .map(tr => ({ a: tr.a, etiqueta: tr.etiqueta, nota: !!tr.nota, confirmar: !!tr.confirmar })),
-    editable: esGestor_(u) && ['pendiente', 'en_progreso', 'revision'].indexOf(t.estado) >= 0
+    editable: esGestor_(u) && ['pendiente', 'en_progreso', 'revision'].indexOf(t.estado) >= 0,
+    archivable: esGestor_(u) && t.estado === 'aprobada' && t.archivada !== 'SI',
+    eliminable: u.rol === 'admin',
+    peso: Number(t.peso) || 0
   };
 }
 
@@ -75,6 +78,7 @@ function tareasPara_(u) {
     Session.getScriptTimeZone(), 'yyyy-MM-dd');
   return leerTabla_('Tareas')
     .filter(t => esGestor_(u) || t.usuario_id === u.id)
+    .filter(t => t.estado !== 'eliminada' && t.archivada !== 'SI')
     .filter(t => {
       if (t.estado === 'aprobada') return t.completada >= limite;
       if (t.estado === 'cancelada') return t.actualizada >= limite;
@@ -181,4 +185,62 @@ function moverTarea(token, id, estado, nota) {
     log_(u.id, 'estado_tarea', t.id, antes + ' → ' + estado + (nota ? ' · ' + nota : ''));
     return tareaCliente_(t, u, cfg, mapaNombres_());
   });
+}
+
+/* ---------- Histórico y limpieza ---------- */
+
+/** Envía al histórico una tarea aprobada, o todas las aprobadas si id === '*' (coordinación/admin). */
+function archivarTareas(token, id) {
+  const u = sesion_(token);
+  exigirGestor_(u);
+  return conLock_(() => {
+    const lista = leerTabla_('Tareas').filter(t => t.estado === 'aprobada' && t.archivada !== 'SI' && (id === '*' || t.id === id));
+    if (!lista.length) throw new Error('No hay tareas aprobadas para enviar al histórico.');
+    lista.forEach(t => { t.archivada = 'SI'; t.actualizada = ahora_(); escribirFila_('Tareas', t); });
+    log_(u.id, 'archivar_tareas', id, lista.length + ' tareas');
+    return lista.length;
+  });
+}
+
+/** Elimina una tarea creada por error o de prueba (solo admin). No cuenta en producción ni informes. */
+function eliminarTarea(token, id) {
+  const u = sesion_(token);
+  exigirAdmin_(u);
+  return conLock_(() => {
+    const t = buscarTarea_(id);
+    t.estado = 'eliminada';
+    t.actualizada = ahora_();
+    escribirFila_('Tareas', t);
+    log_(u.id, 'eliminar_tarea', t.id, t.titulo);
+    return true;
+  });
+}
+
+/**
+ * Histórico: tareas aprobadas (en el histórico o no) con fecha de aprobación en el rango.
+ * Coordinación/admin ven a todos (o a una persona); los demás solo lo suyo.
+ */
+function listarHistorico(token, desde, hasta, usuarioId) {
+  const u = sesion_(token);
+  if (!esFecha_(desde) || !esFecha_(hasta)) throw new Error('Rango de fechas no válido.');
+  if (!esGestor_(u)) usuarioId = u.id;
+  const cfg = config_();
+  const nombres = mapaNombres_();
+  const tareas = leerTabla_('Tareas').filter(t => t.estado === 'aprobada' &&
+    t.completada.slice(0, 10) >= desde && t.completada.slice(0, 10) <= hasta && (!usuarioId || t.usuario_id === usuarioId));
+  const porPersona = {};
+  tareas.forEach(t => {
+    const p = porPersona[t.usuario_id] = porPersona[t.usuario_id] || { usuario_id: t.usuario_id, nombre: nombres[t.usuario_id] || '—', tareas: 0, peso: 0, aTiempo: 0 };
+    p.tareas++;
+    p.peso += Number(t.peso) || 0;
+    if (t.completada.slice(0, 10) <= t.vence) p.aTiempo++;
+  });
+  return {
+    tareas: tareas.map(t => tareaCliente_(t, u, cfg, nombres)).sort((a, b) => b.completada.localeCompare(a.completada)),
+    personas: Object.keys(porPersona).map(k => {
+      const p = porPersona[k];
+      p.pctATiempo = p.tareas ? Math.round(p.aTiempo / p.tareas * 100) : null;
+      return p;
+    }).sort((a, b) => b.peso - a.peso)
+  };
 }

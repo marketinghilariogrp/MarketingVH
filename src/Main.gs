@@ -23,6 +23,8 @@ function getInicio(token) {
       funciones: lista_('funciones'),
       funcionesEvento: lista_('funciones_evento'),
       tiposAgenda: lista_('tipos_agenda'),
+      tiposAgendaPersonal: lista_('tipos_agenda_personal'),
+      marcaHoras: marcaHoras_(u),
       coordinadorPuedeAprobar: cfg.coordinador_puede_aprobar === 'SI',
       jornadaHoras: Number(cfg.jornada_horas) || 8,
       moneda: cfg.moneda || 'S/'
@@ -31,9 +33,12 @@ function getInicio(token) {
     usuarios: usuarios_().filter(x => x.activo === 'SI').map(x => {
       const p = publico_(x);
       if (!gestor) delete p.correo;
+      p.cubreEventos = cubreEventos_(x);
+      p.marcaHoras = marcaHoras_(x);
       return p;
     }),
     hoy: hoy_(),
-    tareas: tareasPara_(u)
+    tareas: tareasPara_(u),
+    notificaciones: leerTabla_('Notificaciones').filter(n => n.usuario_id === u.id && n.leida !== 'SI').length
   };
 }

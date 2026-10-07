@@ -1,5 +1,5 @@
 <script>
-  /* ---------- Informes: pauta, redes, contenido y operación por periodo (para la gerencia) ---------- */
+  /* ---------- Informe de pauta por periodo (para la gerencia) ---------- */
 
   const PALETA = ['#e4572e', '#2563eb', '#0d9488', '#7c3aed', '#ca8a04', '#db2777', '#64748b', '#0891b2'];
   const PERIODOS = [['semana', 'Semana'], ['mes', 'Mes'], ['trimestre', 'Trimestre'], ['anio', 'Año'], ['rango', 'Personalizado']];
@@ -62,7 +62,7 @@
   }
 
   VISTAS.informes = {
-    titulo: 'Informes de marketing',
+    titulo: 'Informe de pauta',
     async pintar() {
       graficos.forEach(g => g.destroy());
       graficos = [];
@@ -111,7 +111,7 @@
         <div id="panelFuentes"></div>
 
         <header class="cab-informe">
-          <div class="marca"><span class="logo">VH</span><div><strong>Informe de marketing · ${esc(r.texto)}</strong>
+          <div class="marca"><span class="logo">VH</span><div><strong>Informe de pauta · ${esc(r.texto)}</strong>
             <small>${esc(marca || 'Todas las marcas')} · ${fmtFecha(d.desde)} al ${fmtFecha(d.hasta)} · comparado con ${fmtFecha(d.anterior.desde)} al ${fmtFecha(d.anterior.hasta)}</small></div></div>
           <small class="sub">Generado el ${fmtFecha(S.hoy)}</small>
         </header>
@@ -160,47 +160,7 @@
               <td class="num">${c.ctr === null ? '—' : fmtNum(c.ctr, 2) + '%'}</td></tr>`).join('') || '<tr><td colspan="6" class="vacio">Sin campañas en el periodo.</td></tr>'}</tbody>
           </table></div></section>`
         : `<section class="card aviso-card no-print"><h3>Conecta tus Google Sheets de pauta</h3>
-            <p>Pulsa «Fuentes de datos» y pega el enlace de cada hoja de pauta. La plataforma reconoce columnas como Fecha / Inicio del informe, Campaña, Importe gastado, Alcance, Impresiones, Clics, Resultados, Leads o Mensajes.</p></section>`}
-
-        <h2 class="seccion">Redes sociales</h2>
-        ${d.redes.cuentas.length ? `
-        <div class="rejilla">
-          <section class="card span2"><h3>Seguidores por marca · 12 meses</h3><div class="lienzo alto"><canvas id="gRedes"></canvas></div></section>
-        </div>
-        <section class="card sin-pad"><div class="tabla-caja plana"><table>
-          <thead><tr><th>Marca</th><th>Red</th><th class="num">Seguidores</th><th class="num">Nuevos</th><th class="num">Crecimiento</th><th class="num">Alcance</th><th class="num">Visualizaciones</th><th class="num">Interacciones</th><th class="num">Publicaciones</th></tr></thead>
-          <tbody>${d.redes.cuentas.map(c => `<tr><td><b>${esc(c.marca)}</b></td><td>${esc(c.red)}</td>
-            <td class="num">${c.seguidores === null ? '—' : fmtNum(c.seguidores)}</td>
-            <td class="num ${c.nuevos < 0 ? 'alerta' : ''}">${c.nuevos === null ? '—' : (c.nuevos > 0 ? '+' : '') + fmtNum(c.nuevos)}</td>
-            <td class="num">${c.crecimiento === null ? '—' : `<span class="${c.crecimiento >= 0 ? 'sube' : 'baja'}">${c.crecimiento > 0 ? '+' : ''}${fmtNum(c.crecimiento, 1)}%</span>`}</td>
-            <td class="num">${fmtNum(c.alcance)}</td><td class="num">${fmtNum(c.visualizaciones)}</td><td class="num">${fmtNum(c.interacciones)}</td>
-            <td class="num">${fmtNum(c.publicaciones)}</td></tr>`).join('')}</tbody>
-        </table></div></section>`
-        : '<section class="card"><p class="vacio">Aún no hay métricas de redes para este periodo. Regístralas en «Redes sociales».</p></section>'}
-
-        <h2 class="seccion">Contenido</h2>
-        <div class="kpis">
-          <div class="kpi"><span class="kpi-v">${d.contenido.planificadas}</span><span class="kpi-k">Publicaciones planificadas</span></div>
-          <div class="kpi"><span class="kpi-v">${d.contenido.publicadas}</span><span class="kpi-k">Publicadas</span></div>
-          <div class="kpi ${d.contenido.atrasadas ? 'alerta' : ''}"><span class="kpi-v">${d.contenido.atrasadas}</span><span class="kpi-k">Atrasadas</span></div>
-          <div class="kpi"><span class="kpi-v">${d.contenido.cumplimiento === null ? '—' : d.contenido.cumplimiento + '%'}</span><span class="kpi-k">Cumplimiento de parrilla</span></div>
-        </div>
-        ${d.contenido.planificadas ? `<div class="rejilla">
-          <section class="card"><h3>Por formato</h3>${barras(d.contenido.porFormato)}</section>
-          <section class="card"><h3>Por pilar</h3>${barras(d.contenido.porPilar)}</section>
-          <section class="card span2"><h3>Por marca</h3>
-            ${barras(d.contenido.porMarca.map(x => ({ k: x.marca, v: x.publicadas, extra: `de ${x.planificadas}${x.atrasadas ? ' · ' + x.atrasadas + ' atrasadas' : ''}` })))}</section>
-        </div>` : ''}
-
-        <h2 class="seccion">Operación del equipo</h2>
-        <div class="kpis">
-          <div class="kpi"><span class="kpi-v">${d.operacion.tareasAprobadas}</span><span class="kpi-k">Piezas aprobadas</span></div>
-          <div class="kpi"><span class="kpi-v">${d.operacion.aTiempo === null ? '—' : d.operacion.aTiempo + '%'}</span><span class="kpi-k">Entregadas a tiempo</span></div>
-          <div class="kpi"><span class="kpi-v">${d.operacion.eventos}</span><span class="kpi-k">Eventos cubiertos</span></div>
-          <div class="kpi"><span class="kpi-v">${fmtNum(d.operacion.horas, 1)}</span><span class="kpi-k">Horas registradas</span></div>
-          ${d.operacion.horasExtra !== null ? `<div class="kpi"><span class="kpi-v">${fmtNum(d.operacion.horasExtra, 1)}</span><span class="kpi-k">Horas extra aprobadas</span></div>` : ''}
-        </div>
-        ${d.operacion.tareasPorTipo.length ? `<section class="card"><h3>Piezas aprobadas por tipo</h3>${barras(d.operacion.tareasPorTipo)}</section>` : ''}`;
+            <p>Pulsa «Fuentes de datos» y pega el enlace de cada hoja de pauta. La plataforma reconoce columnas como Fecha / Inicio del informe, Campaña, Importe gastado, Alcance, Impresiones, Clics, Resultados, Leads o Mensajes.</p></section>`}`;
 
       // Gráficos
       if (d.hayPauta) {
@@ -223,11 +183,7 @@
             type: 'line', borderColor: i ? PALETA[5] : PALETA[3], backgroundColor: i ? PALETA[5] : PALETA[3], tension: .3, spanGaps: true, yAxisID: 'y1' }))) },
           options: { scales: { y: { beginAtZero: true }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } } } } });
       }
-      if (d.redes.cuentas.length) {
-        grafico('gRedes', { type: 'line', data: { labels: d.redes.meses.map(x => etiquetaSerie(x, 'mes')),
-          datasets: d.redes.seguidoresPorMarca.map((x, i) => ({ label: x.marca, data: x.valores, borderColor: PALETA[i % PALETA.length],
-            backgroundColor: PALETA[i % PALETA.length], tension: .3, spanGaps: true })) } });
-      }
+
 
       // Controles
       $$('[data-tipo]').forEach(b => { b.onclick = () => { S.periodoInf = b.dataset.tipo; repintar(); }; });

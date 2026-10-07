@@ -51,7 +51,8 @@ function alertas_(u, datos) {
   }
 
   const hace14 = sumarDias_(hoy, -14);
-  datos.agenda.filter(a => a.estado === 'pendiente' && a.fecha < hoy && a.fecha >= hace14 && (gestor || a.responsable_id === u.id)).forEach(a =>
+  datos.agenda.filter(a => a.estado === 'pendiente' && a.fecha < hoy && a.fecha >= hace14 &&
+    (a.privado === 'SI' ? (u && a.creado_por === u.id) : (gestor || (u && a.responsable_id === u.id)))).forEach(a =>
     add('alta', a.tipo + ' no ejecutada: «' + a.titulo + '»' + (a.marca ? ' · ' + a.marca : '') + ' (' + a.fecha + ')', 'contenido'));
 
   if (gestor) {
@@ -82,10 +83,11 @@ function getDashboard(token) {
   // Semana actual (lunes a hoy).
   const dow = new Date(hoy + 'T12:00:00').getDay() || 7;
   const lunes = sumarDias_(hoy, 1 - dow);
-  const horas = leerTabla_('Horas').filter(r => r.estado === 'activo' && (gestor || r.usuario_id === u.id));
-  const sumaHoras = lista => Math.round(lista.reduce((s, r) => s + (Number(r.horas) || 0), 0) * 10) / 10;
-  const horasSemana = sumaHoras(horas.filter(r => r.fecha >= lunes && r.fecha <= hoy));
-  const horasMes = horas.filter(r => r.fecha.slice(0, 7) === mes);
+  // Horas desde las marcaciones de ingreso/salida.
+  const asistencia = leerTabla_('Asistencia').filter(r => gestor || r.usuario_id === u.id);
+  const calcSemana = calcularAsistencia_(asistencia.filter(r => r.fecha >= lunes), lunes, hoy);
+  const horasSemana = Math.round(calcSemana.personas.reduce((s, x) => s + x.horas, 0) * 10) / 10;
+  const calcMes = calcularAsistencia_(asistencia.filter(r => r.fecha >= lunesDe_(mes + '-01')), mes + '-01', hoy);
 
   const tareas = datos.tareas.filter(t => gestor || t.usuario_id === u.id);
   const abiertas = tareas.filter(t => ABIERTAS.indexOf(t.estado) >= 0);
@@ -97,7 +99,7 @@ function getDashboard(token) {
     { etiqueta: 'Vencidas', valor: abiertas.filter(t => t.vence && t.vence < hoy).length, tono: 'alerta', vista: 'tareas' },
     { etiqueta: 'En revisión', valor: abiertas.filter(t => t.estado === 'revision').length, vista: 'tareas' },
     { etiqueta: gestor ? 'Eventos del mes' : 'Mis eventos del mes', valor: misEventosMes.length, vista: 'eventos' },
-    { etiqueta: gestor ? 'Horas del equipo (semana)' : 'Mis horas (semana)', valor: horasSemana, vista: 'horas' }
+    { etiqueta: gestor ? 'Horas del equipo (semana)' : 'Mis horas (semana)', valor: horasSemana, vista: 'asistencia' }
   ];
   if (gestor) {
     kpis.splice(3, 0, { etiqueta: 'Solicitudes nuevas', valor: datos.solicitudes.filter(s => s.estado === 'nueva').length, vista: 'solicitudes' });
@@ -109,8 +111,6 @@ function getDashboard(token) {
   aprobadasMes.forEach(t => { prod[t.usuario_id] = (prod[t.usuario_id] || 0) + (Number(t.peso) || 1); });
   const aTiempo = aprobadasMes.filter(t => t.completada.slice(0, 10) <= t.vence).length;
 
-  const porFuncion = {};
-  horasMes.forEach(r => { porFuncion[r.funcion] = (porFuncion[r.funcion] || 0) + (Number(r.horas) || 0); });
 
   const proximos = datos.eventos
     .filter(e => e.fecha >= hoy && e.estado === 'programado' && (gestor || e.personal.some(p => p.usuario_id === u.id)))
@@ -124,7 +124,10 @@ function getDashboard(token) {
     alertas: alertas_(u, datos),
     cumplimiento: aprobadasMes.length ? Math.round(aTiempo / aprobadasMes.length * 100) : null,
     produccion: Object.keys(prod).map(id => ({ k: nombres[id] || '—', v: prod[id] })).sort((a, b) => b.v - a.v),
-    horasPorFuncion: Object.keys(porFuncion).map(k => ({ k: k, v: Math.round(porFuncion[k] * 10) / 10 })).sort((a, b) => b.v - a.v),
+    // Sobretiempo del mes por persona: compensable (cubrió evento) y no compensable.
+    sobretiempoMes: calcMes.personas.filter(x => x.compensable || x.noCompensable)
+      .map(x => ({ nombre: x.nombre, compensable: x.compensable, noCompensable: x.noCompensable }))
+      .sort((a, b) => (b.compensable + b.noCompensable) - (a.compensable + a.noCompensable)),
     eventosPorPersona: gestor ? conteoEventos_(eventosMes).filter(x => x.eventos > 0) : [],
     proximos: proximos
   };

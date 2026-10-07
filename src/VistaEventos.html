@@ -89,7 +89,8 @@
 
   function filaPersonal(p = {}) {
     return `<div class="fila-personal">
-      <select data-k="usuario_id" aria-label="Persona">${opcionesPersonas(p.usuario_id, 'Persona…')}</select>
+      <select data-k="usuario_id" aria-label="Persona">${opciones(S.usuarios.filter(u => u.cubreEventos || u.id === p.usuario_id)
+        .map(u => [u.id, u.nombre + (u.area ? ' · ' + u.area : '')]), p.usuario_id, 'Persona…')}</select>
       <select data-k="funcion" aria-label="Función">${opciones(S.cfg.funcionesEvento, p.funcion)}</select>
       <input data-k="zona" placeholder="Zona / etapa" value="${esc(p.zona)}" maxlength="120">
       <input data-k="horario" placeholder="Horario (ej. 8:00–14:00)" value="${esc(p.horario)}" maxlength="60">
@@ -124,7 +125,8 @@
       <label>Detalle<textarea name="detalle" rows="2" maxlength="2000">${esc(x.detalle)}</textarea></label>
       <div class="cab-card"><b>Personal del evento</b><button type="button" class="btn mini" id="bAgregarP">+ Agregar persona</button></div>
       <div id="personal">${x.personal.map(filaPersonal).join('')}</div>
-      <div id="sugerencias" class="sugerencias"><small>Calculando sugerencias…</small></div>`,
+      <div id="sugerencias" class="sugerencias"><small>Calculando sugerencias…</small></div>
+      ${ev && esAdmin() ? '<div><button type="button" class="btn mini peligro" id="bEliminarEv">Eliminar este evento</button></div>' : ''}`,
       async (d, f) => {
         d.personal = $$('.fila-personal', f).map(fila => ({
           usuario_id: $('[data-k=usuario_id]', fila).value,
@@ -143,10 +145,11 @@
       }, ev ? 'Guardar' : 'Crear evento', true, true);
 
     const cont = $('#personal', form);
+    if ($('#bEliminarEv', form)) $('#bEliminarEv', form).onclick = () => eliminarEvento(ev, () => form.parentElement.remove());
     $('#bAgregarP', form).onclick = () => cont.insertAdjacentHTML('beforeend', filaPersonal({ funcion: S.cfg.funcionesEvento[0] }));
     cont.onclick = e => { if (e.target.closest('.quitar')) e.target.closest('.fila-personal').remove(); };
 
-    // Sugerencias: personas activas (no practicantes) ordenadas por menos eventos en el mes.
+    // Sugerencias: personas de la rotación (incluye practicantes) ordenadas por menos eventos en el mes.
     const pintarSug = async () => {
       const mes = ($('[name=fecha]', form).value || S.hoy).slice(0, 7);
       let datos = cacheEventos[mes];
@@ -154,7 +157,7 @@
       const cuenta = {};
       datos.conteoMes.forEach(c => { cuenta[c.usuario_id] = c.eventos; });
       const ya = $$('[data-k=usuario_id]', cont).map(s => s.value);
-      const lista = S.usuarios.filter(u => u.rol !== 'practicante' && u.rol !== 'admin' && !ya.includes(u.id))
+      const lista = S.usuarios.filter(u => u.cubreEventos && !ya.includes(u.id))
         .sort((a, b) => (cuenta[a.id] || 0) - (cuenta[b.id] || 0) || a.nombre.localeCompare(b.nombre)).slice(0, 8);
       $('#sugerencias', form).innerHTML = lista.length ? `<small>Sugeridos (menos eventos en ${MESES[Number(mes.slice(5)) - 1].toLowerCase()}):</small>` +
         lista.map(u => `<button type="button" class="chip-sug" data-u="${esc(u.id)}">${esc(u.nombre)} <small>${cuenta[u.id] || 0}</small></button>`).join('') : '';
@@ -171,29 +174,43 @@
     pintarSug();
   }
 
-  /* ---------- Agenda (grabaciones, publicaciones, entregables…) ---------- */
+  /* ---------- Agenda: elementos del equipo (grabaciones, entregables…) y agenda personal privada ---------- */
+
+  const RECORDATORIO_TXT = [['', 'Sin recordatorio'], ['0', 'A la hora'], ['10', '10 minutos antes'], ['30', '30 minutos antes'],
+    ['60', '1 hora antes'], ['120', '2 horas antes'], ['1440', '1 día antes']];
 
   function formAgenda(a, fecha) {
-    const x = a || { fecha: fecha || S.hoy, tipo: S.cfg.tiposAgenda[0] };
-    modal(a ? 'Editar en agenda' : 'Agregar a la agenda', `
-      <label>Título<input name="titulo" maxlength="200" required value="${esc(x.titulo)}"></label>
+    const g = esGestor();
+    const x = a || { fecha: fecha || S.hoy, tipo: g ? S.cfg.tiposAgenda[0] : S.cfg.tiposAgendaPersonal[0], privado: !g, recordatorio_min: '' };
+    const tipos = g
+      ? `<optgroup label="Equipo">${opciones(S.cfg.tiposAgenda, x.tipo)}</optgroup><optgroup label="Personal">${opciones(S.cfg.tiposAgendaPersonal, x.tipo)}</optgroup>`
+      : opciones(S.cfg.tiposAgendaPersonal, x.tipo);
+    const { form, cerrar } = modal(a ? 'Editar en la agenda' : (g ? 'Agregar a la agenda' : 'Agregar a mi agenda'), `
+      ${g ? '' : '<p class="sub">Tu agenda es personal: solo tú la ves.</p>'}
+      <label>Título<input name="titulo" maxlength="200" required value="${esc(x.titulo)}" placeholder="${g ? 'Ej.: grabación testimonios' : 'Ej.: reunión con proveedor'}"></label>
       <div class="tres">
-        <label>Tipo<select name="tipo" required>${opciones(S.cfg.tiposAgenda, x.tipo)}</select></label>
+        <label>Tipo<select name="tipo" required>${tipos}</select></label>
         <label>Fecha<input type="date" name="fecha" required value="${esc(x.fecha)}"></label>
         <label>Hora<input type="time" name="hora" value="${esc(x.hora)}"></label>
       </div>
-      <div class="dos">
-        <label>Marca<select name="marca">${opciones(S.cfg.marcas, x.marca, '—')}</select></label>
-        <label>Campaña<input name="campana" maxlength="120" value="${esc(x.campana)}"></label>
-      </div>
-      <label>Responsable<select name="responsable_id">${opcionesPersonas(x.responsable_id, '—')}</select></label>
-      <label>Detalle<textarea name="detalle" rows="2" maxlength="2000">${esc(x.detalle)}</textarea></label>`,
+      <label>Recordatorio<select name="recordatorio_min">${opciones(RECORDATORIO_TXT, String(x.recordatorio_min ?? ''))}</select></label>
+      <p class="sub">El recordatorio te llega como notificación en la plataforma y a tu correo (necesita hora).</p>
+      ${g ? `<div class="dos">
+          <label>Marca<select name="marca">${opciones(S.cfg.marcas, x.marca, '—')}</select></label>
+          <label>Campaña<input name="campana" maxlength="120" value="${esc(x.campana)}"></label>
+        </div>
+        <label>Responsable<select name="responsable_id">${opcionesPersonas(x.responsable_id, '—')}</select></label>
+        <label class="check"><input type="checkbox" name="privado" ${x.privado ? 'checked' : ''}> Solo para mí (agenda personal, nadie más la ve)</label>` : ''}
+      <label>Detalle<textarea name="detalle" rows="2" maxlength="2000">${esc(x.detalle)}</textarea></label>
+      ${a && a.eliminable ? '<div><button type="button" class="btn mini peligro" id="bEliminarAg">Eliminar</button></div>' : ''}`,
       async d => {
         if (a) d.id = a.id;
+        d.privado = d.privado === 'on';
         await api('guardarAgenda', d);
         aviso('Agenda actualizada');
         repintar();
       }, a ? 'Guardar' : 'Agregar');
+    if ($('#bEliminarAg', form)) $('#bEliminarAg', form).onclick = () => eliminarAgendaItem(a, cerrar);
   }
 
   async function marcarAgenda(id, estado) {
@@ -201,95 +218,191 @@
     catch (e) { aviso(e.message, 'error'); }
   }
 
-  /* ---------- Calendario mensual ---------- */
+  async function eliminarAgendaItem(a, alTerminar) {
+    await confirmar(`¿Eliminar «${a.titulo}» de la agenda?`, 'Eliminar');
+    try { await api('eliminarAgenda', a.id); if (alTerminar) alTerminar(); aviso('Eliminado'); repintar(); }
+    catch (e) { aviso(e.message, 'error'); }
+  }
+
+  async function eliminarEvento(ev, alTerminar) {
+    await confirmar(`¿Eliminar el evento «${ev.titulo}» del ${fmtFecha(ev.fecha)}? Dejará de verse en el calendario y en la rotación.`, 'Eliminar');
+    try {
+      await api('eliminarEvento', ev.id);
+      delete cacheEventos[ev.fecha.slice(0, 7)];
+      if (alTerminar) alTerminar();
+      aviso('Evento eliminado');
+      repintar();
+    } catch (e) { aviso(e.message, 'error'); }
+  }
+
+  /* ---------- Calendario: vista de mes y vista de día por horas ---------- */
 
   const claseAgenda = t => 'ag-' + String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '-');
+  const claseItemAgenda = a => (a.privado ? 'ag-personal' : claseAgenda(a.tipo));
+  const datosCal = {};
+
+  async function cargarMesCal(mes) {
+    datosCal[mes] = await api('getCalendario', mes);
+    return datosCal[mes];
+  }
 
   VISTAS.calendario = {
     titulo: 'Calendario',
     async pintar() {
-      const mes = S.mesCal || mesActual();
-      const d = await api('getCalendario', mes);
+      const modo = S.modoCal || 'mes';
+      const dia = S.diaCal || S.hoy;
+      const mes = modo === 'dia' ? dia.slice(0, 7) : (S.mesCal || S.hoy.slice(0, 7));
+      const d = await cargarMesCal(mes);
       if (S.vista !== 'calendario') return;
-      const porDia = {};
-      const add = (f, item) => (porDia[f] = porDia[f] || []).push(item);
-      d.eventos.forEach(e => add(e.fecha, { clase: 'ev' + (e.estado === 'cancelado' ? ' tachado' : ''), texto: e.titulo, orden: 0 }));
-      d.agenda.forEach(a => add(a.fecha, { clase: claseAgenda(a.tipo) + (a.estado !== 'pendiente' ? ' tachado' : ''), texto: a.tipo + ': ' + a.titulo, orden: 1 }));
-      d.tareas.forEach(t => add(t.vence, { clase: 'ta' + (t.estado === 'aprobada' ? ' tachado' : ''), texto: 'Entrega: ' + t.titulo, orden: 2 }));
-
-      const primero = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5)) - 1, 1);
-      const offset = (primero.getDay() + 6) % 7;
-      const diasMes = new Date(primero.getFullYear(), primero.getMonth() + 1, 0).getDate();
-      const celdas = [];
-      for (let i = 0; i < offset; i++) celdas.push('<div class="dia vacio-dia"></div>');
-      for (let n = 1; n <= diasMes; n++) {
-        const f = `${mes}-${String(n).padStart(2, '0')}`;
-        const items = (porDia[f] || []).sort((a, b) => a.orden - b.orden);
-        celdas.push(`<button class="dia${f === S.hoy ? ' hoy' : ''}${d.feriados.includes(f) ? ' feriado' : ''}" data-f="${f}">
-          <span class="num-dia">${n}</span>
-          ${items.slice(0, 3).map(it => `<span class="item ${it.clase}">${esc(it.texto)}</span>`).join('')}
-          ${items.length > 3 ? `<span class="mas">+${items.length - 3} más</span>` : ''}
-          ${items.length ? `<span class="puntos">${items.slice(0, 5).map(it => `<i class="${it.clase.split(' ')[0]}"></i>`).join('')}</span>` : ''}
-        </button>`);
-      }
       $('#vista').innerHTML = `
         <div class="toolbar">
-          ${navMes(mes)}
           <div class="controles">
-            ${mes !== mesActual() ? '<button class="btn" id="bHoy">Hoy</button>' : ''}
-            ${esGestor() ? '<button class="btn" id="bAgenda">+ Agenda</button><button class="btn primario" id="bEvento">+ Evento</button>' : ''}
+            <div class="pestanas"><button class="pestana ${modo === 'mes' ? 'activo' : ''}" data-modo="mes">Mes</button>
+              <button class="pestana ${modo === 'dia' ? 'activo' : ''}" data-modo="dia">Día</button></div>
+            ${modo === 'mes' ? navMes(mes) : `<div class="nav-mes"><button type="button" class="btn-ico" data-dia="-1" aria-label="Día anterior">‹</button>
+              <strong>${diaSemana(dia)} ${fmtFecha(dia)}</strong><button type="button" class="btn-ico" data-dia="1" aria-label="Día siguiente">›</button></div>`}
+          </div>
+          <div class="controles">
+            ${(modo === 'mes' ? mes !== S.hoy.slice(0, 7) : dia !== S.hoy) ? '<button class="btn" id="bHoy">Hoy</button>' : ''}
+            <button class="btn" id="bAgenda">${esGestor() ? '+ Agenda' : '+ Mi agenda'}</button>
+            ${esGestor() ? '<button class="btn primario" id="bEvento">+ Evento</button>' : ''}
           </div>
         </div>
-        <div class="leyenda"><span><i class="ev"></i>Evento</span><span><i class="ta"></i>Entrega de tarea</span>
+        <div class="leyenda"><span><i class="ev"></i>Evento</span><span><i class="ta"></i>Entrega de tarea</span><span><i class="ag-personal"></i>Mi agenda</span>
           ${S.cfg.tiposAgenda.map(t => `<span><i class="${claseAgenda(t)}"></i>${esc(t)}</span>`).join('')}</div>
-        <div class="calendario">
-          ${DIAS.map(x => `<div class="cab-dia">${x}</div>`).join('')}
-          ${celdas.join('')}
-        </div>`;
-      enlazarNavMes($('#vista'), mes, m => { S.mesCal = m; repintar(); });
-      if ($('#bHoy')) $('#bHoy').onclick = () => { S.mesCal = mesActual(); repintar(); };
-      const fechaNueva = () => (mes === mesActual() ? S.hoy : mes + '-01');
-      if (esGestor()) {
-        $('#bEvento').onclick = () => formEvento(null, fechaNueva());
-        $('#bAgenda').onclick = () => formAgenda(null, fechaNueva());
-      }
-      $('.calendario').onclick = e => {
-        const b = e.target.closest('[data-f]');
-        if (b) detalleDia(b.dataset.f, d);
+        ${modo === 'mes' ? htmlMes(mes, d) : htmlDia(dia, d)}`;
+
+      $$('[data-modo]').forEach(b => { b.onclick = () => { S.modoCal = b.dataset.modo; repintar(); }; });
+      if (modo === 'mes') enlazarNavMes($('#vista'), mes, m => { S.mesCal = m; repintar(); });
+      $$('[data-dia]').forEach(b => { b.onclick = () => { S.diaCal = sumarDias(dia, Number(b.dataset.dia)); repintar(); }; });
+      if ($('#bHoy')) $('#bHoy').onclick = () => { S.mesCal = S.hoy.slice(0, 7); S.diaCal = S.hoy; repintar(); };
+      const fechaNueva = modo === 'dia' ? dia : (mes === S.hoy.slice(0, 7) ? S.hoy : mes + '-01');
+      $('#bAgenda').onclick = () => formAgenda(null, fechaNueva);
+      if ($('#bEvento')) $('#bEvento').onclick = () => formEvento(null, fechaNueva);
+
+      $('#vista').onclick = e => {
+        const celda = e.target.closest('.calendario [data-f]');
+        if (celda) { S.diaCal = celda.dataset.f; S.modoCal = 'dia'; return repintar(); }
+        const it = e.target.closest('[data-item]');
+        if (it) abrirItem(it.dataset.item, it.dataset.id, d);
       };
     }
   };
 
-  function detalleDia(f, d) {
-    const eventos = d.eventos.filter(e => e.fecha === f);
-    const agenda = d.agenda.filter(a => a.fecha === f);
-    const tareas = d.tareas.filter(t => t.vence === f);
-    const vacio = !eventos.length && !agenda.length && !tareas.length;
-    const { form, cerrar } = modal(`${diaSemana(f)} ${fmtFecha(f)}${d.feriados.includes(f) ? ' · Feriado' : ''}`, `
-      ${esGestor() ? `<div class="controles"><button type="button" class="btn mini primario" data-nuevo="evento">+ Evento</button>
-        <button type="button" class="btn mini" data-nuevo="agenda">+ Agenda</button></div>` : ''}
-      ${vacio ? '<p class="vacio">No hay nada agendado este día.</p>' : ''}
-      ${eventos.map(e => `<div class="item-dia ev">
-        <div class="cab-card"><b>${esc(e.titulo)}</b>${esGestor() ? `<button type="button" class="btn mini" data-ev="${esc(e.id)}">Editar</button>` : ''}</div>
-        <small>${[e.empresa, e.hora_inicio && (e.hora_inicio + (e.hora_fin ? '–' + e.hora_fin : '')), e.lugar, ESTADO_EV[e.estado]].filter(Boolean).map(esc).join(' · ')}</small>
-        <div class="personal">${chipsPersonal(e)}</div></div>`).join('')}
-      ${agenda.map(a => `<div class="item-dia ${claseAgenda(a.tipo)}">
-        <div class="cab-card"><b>${esc(a.tipo)}: ${esc(a.titulo)}</b><span class="estado e-${esc(a.estado)}">${a.parrilla && a.estado === 'hecho' ? 'publicado' : esc(a.estado)}</span></div>
-        <small>${[a.hora, a.marca, a.red, a.formato, a.pilar, a.campana, a.responsable].filter(Boolean).map(esc).join(' · ')}</small>
-        ${a.parrilla ? '<small>Viene de la parrilla de la marca: se edita en su Google Sheet.</small>' : ''}
-        ${a.detalle ? `<small>${esc(a.detalle)}</small>` : ''}
-        <div class="acciones">${a.marcable && a.estado === 'pendiente' ? `<button type="button" class="btn mini ok" data-hecho="${esc(a.id)}">Marcar hecho</button>` : ''}
-          ${a.editable ? `<button type="button" class="btn mini" data-ag="${esc(a.id)}">Editar</button>` : ''}</div></div>`).join('')}
-      ${tareas.map(t => `<div class="item-dia ta"><b>Entrega: ${esc(t.titulo)}</b>
-        <small>${[t.marca, t.responsable, ESTADO_TAREA[t.estado]].filter(Boolean).map(esc).join(' · ')}</small></div>`).join('')}`,
-      null, '', false, true);
-    form.addEventListener('click', e => {
-      const b = e.target.closest('button[type=button]');
-      if (!b || b.hasAttribute('data-cerrar')) return;
-      if (b.dataset.nuevo) { cerrar(); return b.dataset.nuevo === 'evento' ? formEvento(null, f) : formAgenda(null, f); }
-      if (b.dataset.ev) { cerrar(); return formEvento(eventos.find(x => x.id === b.dataset.ev)); }
-      if (b.dataset.ag) { cerrar(); return formAgenda(agenda.find(x => x.id === b.dataset.ag)); }
-      if (b.dataset.hecho) { cerrar(); return marcarAgenda(b.dataset.hecho, 'hecho'); }
+  function itemsDelDia(f, d) {
+    return {
+      eventos: d.eventos.filter(e => e.fecha === f),
+      agenda: d.agenda.filter(a => a.fecha === f),
+      tareas: d.tareas.filter(t => t.vence === f)
+    };
+  }
+
+  function htmlMes(mes, d) {
+    const primero = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5)) - 1, 1);
+    const offset = (primero.getDay() + 6) % 7;
+    const diasMes = new Date(primero.getFullYear(), primero.getMonth() + 1, 0).getDate();
+    const celdas = [];
+    for (let i = 0; i < offset; i++) celdas.push('<div class="dia vacio-dia"></div>');
+    for (let n = 1; n <= diasMes; n++) {
+      const f = `${mes}-${String(n).padStart(2, '0')}`;
+      const x = itemsDelDia(f, d);
+      const items = [].concat(
+        x.eventos.map(e => ({ clase: 'ev' + (e.estado === 'cancelado' ? ' tachado' : ''), texto: (e.hora_inicio ? e.hora_inicio + ' ' : '') + e.titulo })),
+        x.agenda.sort((a, b) => (a.hora || '99').localeCompare(b.hora || '99')).map(a => ({ clase: claseItemAgenda(a) + (a.estado !== 'pendiente' ? ' tachado' : ''), texto: (a.hora ? a.hora + ' ' : '') + a.titulo })),
+        x.tareas.map(t => ({ clase: 'ta' + (t.estado === 'aprobada' ? ' tachado' : ''), texto: 'Entrega: ' + t.titulo })));
+      celdas.push(`<button class="dia${f === S.hoy ? ' hoy' : ''}${d.feriados.includes(f) ? ' feriado' : ''}" data-f="${f}">
+        <span class="num-dia">${n}</span>
+        ${items.slice(0, 3).map(it => `<span class="item ${it.clase}">${esc(it.texto)}</span>`).join('')}
+        ${items.length > 3 ? `<span class="mas">+${items.length - 3} más</span>` : ''}
+        ${items.length ? `<span class="puntos">${items.slice(0, 5).map(it => `<i class="${it.clase.split(' ')[0]}"></i>`).join('')}</span>` : ''}
+      </button>`);
+    }
+    return `<div class="calendario">${DIAS.map(x => `<div class="cab-dia">${x}</div>`).join('')}${celdas.join('')}</div>
+      <p class="sub">Toca un día para verlo por horas.</p>`;
+  }
+
+  const HORA_INI = 6;
+  const HORA_FIN = 24;
+  const ALTO_HORA = 56;
+
+  /** Vista de un día al estilo del calendario del iPhone: franja de horas y bloques por horario. */
+  function htmlDia(f, d) {
+    const x = itemsDelDia(f, d);
+    const minutos = h => { const [a, b] = h.split(':').map(Number); return a * 60 + b; };
+    const bloques = [];
+    const todoElDia = [];
+    x.eventos.forEach(e => {
+      const it = { tipo: 'evento', id: e.id, clase: 'ev' + (e.estado === 'cancelado' ? ' tachado' : ''), titulo: e.titulo,
+        sub: [e.empresa, e.lugar, e.personal.map(p => p.nombre).join(', ')].filter(Boolean).join(' · ') };
+      if (e.hora_inicio) {
+        const ini = minutos(e.hora_inicio);
+        bloques.push(Object.assign(it, { ini, fin: e.hora_fin ? Math.max(minutos(e.hora_fin), ini + 30) : ini + 60, hora: e.hora_inicio + (e.hora_fin ? '–' + e.hora_fin : '') }));
+      } else todoElDia.push(it);
     });
+    x.agenda.forEach(a => {
+      const it = { tipo: 'agenda', id: a.id, clase: claseItemAgenda(a) + (a.estado !== 'pendiente' ? ' tachado' : ''),
+        titulo: (a.privado ? '' : a.tipo + ': ') + a.titulo, sub: [a.marca, a.red, a.responsable && !a.privado ? a.responsable : ''].filter(Boolean).join(' · ') };
+      if (a.hora) { const ini = minutos(a.hora); bloques.push(Object.assign(it, { ini, fin: ini + 30, hora: a.hora })); }
+      else todoElDia.push(it);
+    });
+    x.tareas.forEach(t => todoElDia.push({ tipo: 'tarea', id: t.id, clase: 'ta' + (t.estado === 'aprobada' ? ' tachado' : ''),
+      titulo: 'Entrega: ' + t.titulo, sub: [t.marca, t.responsable].filter(Boolean).join(' · ') }));
+
+    // Carriles para que los bloques que se cruzan queden lado a lado.
+    bloques.sort((a, b) => a.ini - b.ini);
+    const finCarril = [];
+    bloques.forEach(b => {
+      let c = finCarril.findIndex(fin => fin <= b.ini);
+      if (c < 0) { c = finCarril.length; finCarril.push(0); }
+      finCarril[c] = b.fin;
+      b.carril = c;
+    });
+    const carriles = Math.max(1, finCarril.length);
+    const desde = Math.min(HORA_INI * 60, ...bloques.map(b => Math.floor(b.ini / 60) * 60));
+    const horas = [];
+    for (let h = desde / 60; h < HORA_FIN; h++) horas.push(h);
+    const ahora = new Date();
+    const minAhora = ahora.getHours() * 60 + ahora.getMinutes();
+
+    return `
+      ${d.feriados.includes(f) ? '<p class="sub"><b>Feriado</b></p>' : ''}
+      ${todoElDia.length ? `<section class="card todo-dia"><h4>Todo el día</h4>${todoElDia.map(it =>
+        `<button class="bloque-fijo ${it.clase.split(' ')[0]}${it.clase.includes('tachado') ? ' tachado' : ''}" data-item="${it.tipo}" data-id="${esc(it.id)}">
+          <b>${esc(it.titulo)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</button>`).join('')}</section>` : ''}
+      <section class="card sin-pad dia-linea">
+        <div class="horas" style="height:${horas.length * ALTO_HORA}px">
+          ${horas.map((h, i) => `<div class="hora" style="top:${i * ALTO_HORA}px"><span>${String(h).padStart(2, '0')}:00</span></div>`).join('')}
+          ${f === S.hoy && minAhora >= desde ? `<div class="ahora" style="top:${(minAhora - desde) / 60 * ALTO_HORA}px"></div>` : ''}
+          <div class="bloques">${bloques.map(b => `<button class="bloque ${b.clase.split(' ')[0]}${b.clase.includes('tachado') ? ' tachado' : ''}"
+            data-item="${b.tipo}" data-id="${esc(b.id)}"
+            style="top:${(b.ini - desde) / 60 * ALTO_HORA}px;height:${Math.max(26, (b.fin - b.ini) / 60 * ALTO_HORA - 2)}px;left:calc(${b.carril / carriles * 100}% + 2px);width:calc(${100 / carriles}% - 4px)">
+            <b>${esc(b.titulo)}</b><small>${esc(b.hora)}${b.sub ? ' · ' + esc(b.sub) : ''}</small></button>`).join('')}</div>
+        </div>
+        ${!bloques.length && !todoElDia.length ? '<p class="vacio">No hay nada agendado este día.</p>' : ''}
+      </section>`;
+  }
+
+  /** Detalle de un evento, elemento de agenda o entrega, con sus acciones. */
+  function abrirItem(tipo, id, d) {
+    if (tipo === 'evento') {
+      const e = d.eventos.find(x => x.id === id);
+      if (esGestor()) return formEvento(e);
+      return modal(e.titulo, `<p class="sub">${[fmtFecha(e.fecha), e.hora_inicio && (e.hora_inicio + (e.hora_fin ? '–' + e.hora_fin : '')), e.empresa, e.lugar, ESTADO_EV[e.estado]].filter(Boolean).map(esc).join(' · ')}</p>
+        ${e.detalle ? `<p>${esc(e.detalle)}</p>` : ''}<div class="personal">${chipsPersonal(e)}</div>`, null);
+    }
+    if (tipo === 'tarea') {
+      const t = d.tareas.find(x => x.id === id);
+      return modal('Entrega: ' + t.titulo, `<p class="sub">${[fmtFecha(t.vence), t.marca, t.responsable, ESTADO_TAREA[t.estado]].filter(Boolean).map(esc).join(' · ')}</p>`, null);
+    }
+    const a = d.agenda.find(x => x.id === id);
+    if (a.editable) return formAgenda(a);
+    const { form, cerrar } = modal((a.privado ? '' : a.tipo + ': ') + a.titulo, `
+      <p class="sub">${[fmtFecha(a.fecha) + (a.hora ? ' ' + a.hora : ''), a.marca, a.red, a.formato, a.pilar, a.responsable].filter(Boolean).map(esc).join(' · ')}</p>
+      ${a.detalle ? `<p>${esc(a.detalle)}</p>` : ''}
+      ${a.parrilla ? '<p class="sub">Viene de la parrilla de la marca: se edita en su Google Sheet.</p>' : ''}
+      <div class="acciones">${a.marcable && a.estado === 'pendiente' ? '<button type="button" class="btn mini ok" id="bHechoAg">Marcar hecho</button>' : ''}
+        ${a.eliminable ? '<button type="button" class="btn mini peligro" id="bEliminarAg2">Eliminar</button>' : ''}</div>`, null);
+    if ($('#bHechoAg', form)) $('#bHechoAg', form).onclick = () => { cerrar(); marcarAgenda(a.id, 'hecho'); };
+    if ($('#bEliminarAg2', form)) $('#bEliminarAg2', form).onclick = () => eliminarAgendaItem(a, cerrar);
   }
 </script>

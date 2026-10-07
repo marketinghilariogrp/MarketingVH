@@ -364,9 +364,6 @@ function getInforme(token, desde, hasta, marca, antDesde, antHasta) {
   const campanas = Object.keys(camp).map(k => Object.assign({ marca: k.split('|')[0], campana: k.split('|').slice(1).join('|') }, tot(camp[k])))
     .sort((a, b) => b.inversion - a.inversion);
 
-  const redes = informeRedes_(desde, hasta, marca);
-  const contenido = informeContenido_(desde, hasta, marca);
-  const operacion = informeOperacion_(desde, hasta, marca);
 
   const informe = {
     desde: desde, hasta: hasta, marca: marca, dias: dias, granularidad: gran,
@@ -381,95 +378,14 @@ function getInforme(token, desde, hasta, marca, antDesde, antHasta) {
     variacionesPorMoneda: { inversion: variacionPorMoneda_(tA, tB, 'inversion'), cpr: variacionPorMoneda_(tA, tB, 'cpr') },
     simbolos: SIMBOLO,
     serie: serie, historico: hist, porMarca: porMarca, campanas: campanas.slice(0, 15),
-    redes: redes, contenido: contenido, operacion: operacion,
     hayPauta: pauta.length > 0
   };
   informe.interpretaciones = interpretar_(informe, campanas);
   return informe;
 }
 
-function informeRedes_(desde, hasta, marca) {
-  const mDesde = desde.slice(0, 7);
-  const mHasta = hasta.slice(0, 7);
-  const base = mesAnterior_(mDesde);
-  const datos = serieRedes_(base, mHasta).filter(r => !marca || r.marca === marca);
-  const ultimoMes = id => datos.filter(r => r.cuenta_id === id && r.mes >= mDesde && r.seguidores !== null).sort((a, b) => b.mes.localeCompare(a.mes))[0];
-  const cuentas = {};
-  datos.forEach(r => { cuentas[r.cuenta_id] = r; });
-  const filas = Object.keys(cuentas).map(id => {
-    const c = cuentas[id];
-    const fin = ultimoMes(id);
-    const ini = datos.find(r => r.cuenta_id === id && r.mes === base);
-    const enPeriodo = datos.filter(r => r.cuenta_id === id && r.mes >= mDesde && r.mes <= mHasta);
-    const suma = k => enPeriodo.reduce((s, r) => s + (r[k] || 0), 0);
-    const seguidores = fin ? fin.seguidores : null;
-    const inicial = ini ? ini.seguidores : null;
-    return {
-      marca: c.marca, red: c.red, seguidores: seguidores, nuevos: seguidores !== null && inicial !== null ? seguidores - inicial : null,
-      crecimiento: seguidores !== null && inicial ? Math.round((seguidores - inicial) / inicial * 1000) / 10 : null,
-      alcance: suma('alcance'), visualizaciones: suma('visualizaciones'), interacciones: suma('interacciones'), publicaciones: suma('publicaciones')
-    };
-  }).sort((a, b) => (a.marca + a.red).localeCompare(b.marca + b.red));
-  // Seguidores por marca, mes a mes (12 meses hasta «hasta»).
-  const meses = [];
-  let m = mHasta;
-  for (let i = 0; i < 12; i++) { meses.unshift(m); m = mesAnterior_(m); }
-  const todas = serieRedes_(meses[0], mHasta).filter(r => !marca || r.marca === marca);
-  const marcas = Array.from(new Set(todas.map(r => r.marca))).sort();
-  return {
-    cuentas: filas,
-    meses: meses,
-    seguidoresPorMarca: marcas.map(mc => ({ marca: mc, valores: meses.map(ms => {
-      const rs = todas.filter(r => r.marca === mc && r.mes === ms && r.seguidores !== null);
-      return rs.length ? rs.reduce((s, r) => s + r.seguidores, 0) : null;
-    }) }))
-  };
-}
 
-function informeContenido_(desde, hasta, marca) {
-  const hoy = hoy_();
-  const pubs = leerTabla_('Agenda').filter(a => a.tipo === 'Publicación' && a.fecha >= desde && a.fecha <= hasta &&
-    a.estado !== 'cancelado' && (!marca || a.marca === marca));
-  const cuenta = (lista, k) => {
-    const o = {};
-    lista.forEach(a => { const v = a[k] || 'Sin dato'; o[v] = (o[v] || 0) + 1; });
-    return Object.keys(o).map(x => ({ k: x, v: o[x] })).sort((a, b) => b.v - a.v);
-  };
-  const porMarca = Array.from(new Set(pubs.map(a => a.marca))).sort().map(m => {
-    const l = pubs.filter(a => a.marca === m);
-    return { marca: m, planificadas: l.length, publicadas: l.filter(a => a.estado === 'hecho').length,
-      atrasadas: l.filter(a => a.estado === 'pendiente' && a.fecha < hoy).length };
-  });
-  const publicadas = pubs.filter(a => a.estado === 'hecho').length;
-  const vencidas = pubs.filter(a => a.fecha < hoy);
-  return {
-    planificadas: pubs.length, publicadas: publicadas,
-    atrasadas: pubs.filter(a => a.estado === 'pendiente' && a.fecha < hoy).length,
-    cumplimiento: vencidas.length ? Math.round(vencidas.filter(a => a.estado === 'hecho').length / vencidas.length * 100) : null,
-    porMarca: porMarca, porFormato: cuenta(pubs, 'formato'), porPilar: cuenta(pubs, 'pilar'), porRed: cuenta(pubs, 'red')
-  };
-}
 
-function informeOperacion_(desde, hasta, marca) {
-  const deMarca = (m) => !marca || m === marca;
-  const tareas = leerTabla_('Tareas').filter(t => t.estado === 'aprobada' && t.completada.slice(0, 10) >= desde &&
-    t.completada.slice(0, 10) <= hasta && deMarca(t.marca));
-  const aTiempo = tareas.filter(t => t.completada.slice(0, 10) <= t.vence).length;
-  const eventos = eventosConPersonal_(e => e.fecha >= desde && e.fecha <= hasta && e.estado !== 'cancelado' && deMarca(e.empresa));
-  const horas = leerTabla_('Horas').filter(h => h.estado === 'activo' && h.fecha >= desde && h.fecha <= hasta && (!marca || h.marca === marca));
-  const extra = leerTabla_('Sobretiempo').filter(s => s.estado === 'aprobado' && s.fecha >= desde && s.fecha <= hasta);
-  const porTipo = {};
-  tareas.forEach(t => { porTipo[t.tipo || 'Sin tipo'] = (porTipo[t.tipo || 'Sin tipo'] || 0) + 1; });
-  return {
-    tareasAprobadas: tareas.length,
-    aTiempo: tareas.length ? Math.round(aTiempo / tareas.length * 100) : null,
-    tareasPorTipo: Object.keys(porTipo).map(k => ({ k: k, v: porTipo[k] })).sort((a, b) => b.v - a.v),
-    eventos: eventos.length,
-    coberturas: eventos.reduce((s, e) => s + e.personal.filter(p => p.estado !== 'ausente').length, 0),
-    horas: Math.round(horas.reduce((s, h) => s + (Number(h.horas) || 0), 0) * 10) / 10,
-    horasExtra: marca ? null : Math.round(extra.reduce((s, x) => s + (Number(x.horas) || 0), 0) * 10) / 10
-  };
-}
 
 /** Lecturas automáticas en lenguaje simple para el informe. */
 function interpretar_(inf, campanas) {
@@ -538,23 +454,5 @@ function interpretar_(inf, campanas) {
     });
   }
 
-  const redes = inf.redes.cuentas.filter(c => c.crecimiento !== null);
-  if (redes.length) {
-    const mejor = redes.slice().sort((a, b) => b.crecimiento - a.crecimiento)[0];
-    const nuevos = redes.reduce((s, c) => s + (c.nuevos || 0), 0);
-    out.push({ tono: nuevos >= 0 ? 'bueno' : 'malo', texto: 'Redes: ' + (nuevos >= 0 ? 'se sumaron ' : 'se perdieron ') + n(Math.abs(nuevos)) + ' seguidores. El mayor crecimiento fue ' + mejor.marca + ' en ' + mejor.red + ' (' + pct(mejor.crecimiento) + ').' });
-  }
-  const c = inf.contenido;
-  if (c.planificadas) {
-    out.push({ tono: c.cumplimiento === null ? 'neutro' : c.cumplimiento >= 90 ? 'bueno' : c.cumplimiento < 75 ? 'malo' : 'neutro',
-      texto: 'Contenido: ' + c.publicadas + ' de ' + c.planificadas + ' publicaciones planificadas ya salieron' +
-        (c.cumplimiento !== null ? ' (cumplimiento ' + c.cumplimiento + '% de lo que ya debía publicarse)' : '') +
-        (c.atrasadas ? '; ' + c.atrasadas + (c.atrasadas === 1 ? ' sigue pendiente' : ' siguen pendientes') + ' con fecha pasada.' : '.') });
-  }
-  const o = inf.operacion;
-  if (o.tareasAprobadas) {
-    out.push({ tono: o.aTiempo >= 85 ? 'bueno' : o.aTiempo < 70 ? 'malo' : 'neutro',
-      texto: 'Producción: ' + o.tareasAprobadas + ' piezas aprobadas, ' + o.aTiempo + '% entregadas a tiempo. ' + o.eventos + ' eventos cubiertos.' });
-  }
   return out;
 }

@@ -2,6 +2,10 @@
   /* ---------- Producción: tablero de tareas ---------- */
 
   const COLUMNAS = [['pendiente', 'Pendiente'], ['en_progreso', 'En progreso'], ['revision', 'En revisión'], ['aprobada', 'Aprobada']];
+  // Orden dentro de cada columna: primero la prioridad (alta → baja) y luego la entrega más próxima.
+  const PESO_PRIO = { alta: 0, media: 1, baja: 2 };
+  const ordenTareas = (a, b) => (PESO_PRIO[a.prioridad] ?? 3) - (PESO_PRIO[b.prioridad] ?? 3) ||
+    String(a.vence || '9999').localeCompare(String(b.vence || '9999'));
   const estaVencida = t => t.vence && t.vence < S.hoy && !['aprobada', 'cancelada'].includes(t.estado);
 
   function tarjeta(t) {
@@ -20,6 +24,8 @@
         <div class="acciones">
           ${t.acciones.map(a => `<button class="btn mini${a.a === 'aprobada' ? ' ok' : ''}${a.a === 'cancelada' ? ' peligro' : ''}" data-id="${esc(t.id)}" data-accion="${esc(a.a)}">${esc(a.etiqueta)}</button>`).join('')}
           ${t.editable ? `<button class="btn mini fantasma" data-id="${esc(t.id)}" data-accion="editar">Editar</button>` : ''}
+          ${t.archivable ? `<button class="btn mini" data-id="${esc(t.id)}" data-accion="archivar">Al histórico</button>` : ''}
+          ${t.eliminable ? `<button class="btn mini fantasma peligro" data-id="${esc(t.id)}" data-accion="eliminar">Eliminar</button>` : ''}
         </div>
       </article>`;
   }
@@ -51,13 +57,14 @@
         </div>
         <div class="controles">
           <button class="btn" id="bRefrescar">↻ Actualizar</button>
+          ${esGestor() && S.tareas.some(t => t.archivable) ? '<button class="btn" id="bArchivarTodas">Aprobadas al histórico</button>' : ''}
           ${esGestor() ? '<button class="btn primario" id="bNueva">+ Nueva tarea</button>' : ''}
         </div>
       </div>
       <div class="pestanas solo-celular" id="pestanasKanban">${cols.map(([e, titulo]) =>
         `<button class="pestana ${S.colMovil === e ? 'activo' : ''}" data-col="${e}">${titulo} <span class="cuenta">${tareas.filter(t => t.estado === e).length}</span></button>`).join('')}</div>
       <div class="kanban">${cols.map(([e, titulo]) => {
-        const lista = tareas.filter(t => t.estado === e);
+        const lista = tareas.filter(t => t.estado === e).sort(ordenTareas);
         return `<section class="columna${S.colMovil === e ? ' visible' : ''}"><h3>${titulo}<span class="cuenta">${lista.length}</span></h3>
           ${lista.map(tarjeta).join('') || '<p class="vacio">Sin tareas</p>'}</section>`;
       }).join('')}</div>`;
@@ -73,6 +80,16 @@
       $('#fPersona').onchange = e => { S.filtro = e.target.value; pintarTablero(); };
       $('#fCanc').onchange = e => { S.verCanceladas = e.target.checked; pintarTablero(); };
       $('#bNueva').onclick = () => formTarea(null);
+      if ($('#bArchivarTodas')) $('#bArchivarTodas').onclick = async () => {
+        const n = S.tareas.filter(t => t.archivable).length;
+        await confirmar(`¿Enviar las ${n} tareas aprobadas al histórico? Dejarán de verse en el tablero.`, 'Enviar');
+        try {
+          await api('archivarTareas', '*');
+          S.tareas = S.tareas.filter(t => !t.archivable);
+          aviso('Tareas aprobadas enviadas al histórico');
+          pintarTablero();
+        } catch (err) { aviso(err.message, 'error'); }
+      };
     }
     $('.kanban').onclick = async e => {
       const b = e.target.closest('button[data-accion]');
@@ -80,6 +97,17 @@
       const t = S.tareas.find(x => x.id === b.dataset.id);
       if (!t) return;
       if (b.dataset.accion === 'editar') return formTarea(t);
+      if (b.dataset.accion === 'archivar' || b.dataset.accion === 'eliminar') {
+        const eliminar = b.dataset.accion === 'eliminar';
+        if (eliminar) await confirmar(`¿Eliminar la tarea «${t.titulo}»? Ya no contará en la producción ni en el histórico.`, 'Eliminar');
+        try {
+          await api(eliminar ? 'eliminarTarea' : 'archivarTareas', t.id);
+          S.tareas = S.tareas.filter(x => x.id !== t.id);
+          aviso(eliminar ? 'Tarea eliminada' : 'Tarea enviada al histórico');
+          pintarTablero();
+        } catch (err) { aviso(err.message, 'error'); }
+        return;
+      }
       const acc = t.acciones.find(a => a.a === b.dataset.accion);
       if (!acc) return;
       if (acc.nota) return formDevolver(t, acc);
@@ -232,6 +260,56 @@
       $('tbody').onclick = e => {
         const tr = e.target.closest('tr[data-id]');
         if (tr) { S.filtro = tr.dataset.id; irA('tareas'); }
+      };
+    }
+  };
+
+  /* ---------- Histórico de tareas: producción aprobada por persona ---------- */
+
+  VISTAS.historico = {
+    titulo: () => esGestor() ? 'Histórico de tareas' : 'Mi histórico',
+    async pintar() {
+      const desde = S.desdeHist || sumarMes(S.hoy.slice(0, 7), -2) + '-01';
+      const hasta = S.hastaHist || S.hoy;
+      const persona = esGestor() ? (S.personaHist || '') : '';
+      const d = await api('listarHistorico', desde, hasta, persona);
+      if (S.vista !== 'historico') return;
+      const marca = S.marcaHist || '';
+      const tareas = marca ? d.tareas.filter(t => t.marca === marca) : d.tareas;
+      $('#vista').innerHTML = `
+        <div class="toolbar">
+          <div class="controles">
+            <label class="en-linea">Desde <input type="date" id="hDesde" value="${desde}"></label>
+            <label class="en-linea">Hasta <input type="date" id="hHasta" value="${hasta}"></label>
+            ${esGestor() ? `<select id="hPersona" aria-label="Persona">${opcionesPersonas(persona, 'Todo el equipo')}</select>` : ''}
+            <select id="hMarca" aria-label="Marca">${opciones(S.cfg.marcas, marca, 'Todas las marcas')}</select>
+          </div>
+        </div>
+        <p class="sub">Tareas aprobadas en el rango (por fecha de aprobación). Peso de producción: alta 3 · media 2 · baja 1.</p>
+        ${esGestor() && !persona ? `<section class="card sin-pad"><div class="cab-card pad"><h3>Producción por persona</h3></div>
+          <div class="tabla-caja plana"><table>
+            <thead><tr><th>Persona</th><th class="num">Tareas aprobadas</th><th class="num">Peso de producción</th><th class="num">A tiempo</th></tr></thead>
+            <tbody>${d.personas.map(p => `<tr class="clic" data-p="${esc(p.usuario_id)}"><td><b>${esc(p.nombre)}</b></td>
+              <td class="num">${p.tareas}</td><td class="num">${p.peso}</td><td class="num">${p.pctATiempo === null ? '—' : p.pctATiempo + '%'}</td></tr>`).join('')
+              || '<tr><td colspan="4" class="vacio">Sin tareas aprobadas en el rango.</td></tr>'}</tbody>
+          </table></div></section>` : ''}
+        <section class="card sin-pad"><div class="cab-card pad"><h3>Tareas <span class="cuenta">${tareas.length}</span></h3></div>
+          <div class="tabla-caja plana"><table>
+            <thead><tr><th>Tarea</th>${esGestor() ? '<th>Responsable</th>' : ''}<th>Marca</th><th>Tipo</th><th>Prioridad</th><th>Entrega</th><th>Aprobada</th><th>A tiempo</th></tr></thead>
+            <tbody>${tareas.map(t => `<tr><td class="ancho"><b>${esc(t.titulo)}</b>${t.pieza && t.pieza !== t.titulo ? `<small>${esc(t.pieza)}</small>` : ''}</td>
+              ${esGestor() ? `<td>${esc(t.responsable)}</td>` : ''}<td>${esc(t.marca)}</td><td>${esc(t.tipo)}</td>
+              <td><span class="chip p-${esc(t.prioridad)}">${PRIO_TXT[t.prioridad] || ''}</span></td>
+              <td>${fmtFecha(t.vence)}</td><td>${fmtFecha(t.completada)}</td>
+              <td>${t.completada.slice(0, 10) <= t.vence ? '<span class="sube">Sí</span>' : '<span class="baja">No</span>'}</td></tr>`).join('')
+              || '<tr><td colspan="8" class="vacio">Sin tareas en este rango.</td></tr>'}</tbody>
+          </table></div></section>`;
+      $('#hDesde').onchange = e => { S.desdeHist = e.target.value; repintar(); };
+      $('#hHasta').onchange = e => { S.hastaHist = e.target.value; repintar(); };
+      $('#hMarca').onchange = e => { S.marcaHist = e.target.value; repintar(); };
+      if ($('#hPersona')) $('#hPersona').onchange = e => { S.personaHist = e.target.value; repintar(); };
+      $('#vista').onclick = e => {
+        const tr = e.target.closest('tr[data-p]');
+        if (tr) { S.personaHist = tr.dataset.p; repintar(); }
       };
     }
   };
