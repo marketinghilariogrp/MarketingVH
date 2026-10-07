@@ -25,6 +25,7 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
 - Equipo actual (oct 2026): Rodrigo, Jefferson (coord.), Gabriela (coord.), Blue, Antony, Renzo y Abigail (practicantes),
   Chris, Cesi. Fran, Jorge, Challs y Henz ya no están. Marcas: Nexo, Academia VH Business, Vyc, Pagape, Marca Personal, EDE.
 - Monedas de pauta: solo Nexo pauta en soles (PEN); el resto en dólares (USD). La cuenta «CA-Huacachina del Norte»
-  es de Nexo. Los informes convierten con Config.tipo_cambio_usd / tipo_cambio_mensual.
+  es de Nexo. NUNCA convertir entre monedas (decisión del usuario): cada monto lleva el símbolo de su cuenta (S/ o $)
+  y los totales que mezclan monedas se muestran por separado (`totales_().monedas`, `montoTexto_`).
 - Horario: L–V 9:00–18:30, sáb 9:00–13:00; fuera de eso es sobretiempo (Sobretiempo.gs).
 - Pruebas: lógica del servidor con stubs en Node (vm) y la interfaz con un `prueba-local.html` que simula google.script.run.

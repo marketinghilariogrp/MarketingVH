@@ -94,10 +94,23 @@ function marcaDesdeTexto_(texto, marcas) {
   return marcas.find(m => t.indexOf(normal_(m)) >= 0 || normal_(m).indexOf(t) >= 0) || texto;
 }
 
-/* ---------- Monedas: cada cuenta publicitaria puede estar en PEN o USD ---------- */
+/*
+ * ---------- Monedas: cada cuenta publicitaria está en PEN o USD ----------
+ * Los montos NO se convierten: cada cifra se muestra con el símbolo de su cuenta (S/ o $).
+ * Si un total mezcla monedas, se informa por separado (S/ … + $ …).
+ */
 
 const MONEDAS = ['PEN', 'USD'];
-const SIMBOLO = { PEN: 'S/', USD: 'US$' };
+const SIMBOLO = { PEN: 'S/', USD: '$' };
+
+/** «S/ 240.00» o, si hay varias monedas, «S/ 240.00 + $ 120.00». */
+function montoTexto_(t, campo) {
+  campo = campo || 'inversion';
+  const n = v => Number(v).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const partes = MONEDAS.filter(m => t.monedas[m] && t.monedas[m][campo] !== null)
+    .map(m => SIMBOLO[m] + ' ' + n(t.monedas[m][campo]));
+  return partes.join(' + ') || '—';
+}
 
 /** PEN o USD si el texto lo indica («13.32 PEN», «US$ 5», «Importe gastado (USD)», «Moneda PEN»…). */
 function monedaEnTexto_(s) {
@@ -121,19 +134,6 @@ function monedaDeHoja_(ss, valores, filaCab, colInversion) {
     if (fila) return monedaEnTexto_(fila[1]);
   }
   return '';
-}
-
-function tipoCambio_(mes) {
-  const cfg = config_();
-  const m = String(cfg.tipo_cambio_mensual || '').split(';').map(s => s.trim().split(':'))
-    .find(p => p[0] === mes && Number(p[1]) > 0);
-  return m ? Number(m[1]) : (Number(cfg.tipo_cambio_usd) || 3.75);
-}
-
-function convertir_(monto, de, a, fecha) {
-  if (!monto || !de || de === a) return monto;
-  const tc = tipoCambio_(String(fecha).slice(0, 7));
-  return de === 'USD' ? monto * tc : monto / tc;
 }
 
 function leerFuente_(fuente, marcas) {
@@ -222,7 +222,6 @@ function sincronizarFuentes() {
 /** Variaciones fuertes de los últimos 7 días vs. los 7 anteriores, por marca (para las alertas). */
 function alertasPauta_() {
   const umbral = Number(config_().umbral_variacion) || 30;
-  const mon = SIMBOLO[config_().moneda_informe || 'PEN'] + ' ';
   const hoy = hoy_();
   const a1 = sumarDias_(hoy, -6);
   const b0 = sumarDias_(hoy, -13);
@@ -232,7 +231,7 @@ function alertasPauta_() {
   Array.from(new Set(filas.map(r => r.marca))).forEach(m => {
     const a = totales_(filas.filter(r => r.marca === m && r.fecha >= a1));
     const b = totales_(filas.filter(r => r.marca === m && r.fecha >= b0 && r.fecha <= b1));
-    if (a.inversion > 0 && !a.resultados) out.push(m + ': ' + mon + a.inversion + ' invertidos en 7 días sin resultados registrados');
+    if (a.inversion > 0 && !a.resultados) out.push(m + ': ' + montoTexto_(a) + ' invertidos en 7 días sin resultados registrados');
     const vi = variacion_(a.inversion, b.inversion);
     if (vi !== null && Math.abs(vi) >= umbral) out.push(m + ': la inversión ' + (vi > 0 ? 'subió ' : 'bajó ') + Math.abs(vi) + '% vs. la semana anterior');
     const vc = variacion_(a.cpr, b.cpr);
@@ -243,26 +242,55 @@ function alertasPauta_() {
 
 /* ---------- Informe ejecutivo ---------- */
 
-/** Suma métricas; la inversión se convierte a la moneda pedida (por defecto Config.moneda_informe). */
-function totales_(filas, moneda) {
-  moneda = moneda || config_().moneda_informe || 'PEN';
-  const t = { inversion: 0, alcance: 0, impresiones: 0, clics: 0, resultados: 0, leads: 0, mensajes: 0 };
+/**
+ * Suma métricas sin convertir monedas. Los montos se separan por moneda en t.monedas;
+ * t.moneda es 'PEN', 'USD', 'MIXTA' (soles y dólares juntos) o null (sin datos).
+ * Los indicadores en dinero del total (inversion, cpr, cpm, cpc) solo valen si no es MIXTA.
+ */
+function totales_(filas) {
+  const t = { inversion: 0, alcance: 0, impresiones: 0, clics: 0, resultados: 0, leads: 0, mensajes: 0, monedas: {} };
   filas.forEach(r => {
     ['alcance', 'impresiones', 'clics', 'leads', 'mensajes'].forEach(k => { t[k] += Number(r[k]) || 0; });
-    t.inversion += convertir_(Number(r.inversion) || 0, r.moneda || 'PEN', moneda, r.fecha);
-    const res = Number(r.resultados) || 0;
-    t.resultados += res > 0 ? res : (Number(r.leads) || 0) + (Number(r.mensajes) || 0);
+    const res = (Number(r.resultados) || 0) > 0 ? Number(r.resultados) : (Number(r.leads) || 0) + (Number(r.mensajes) || 0);
+    const inv = Number(r.inversion) || 0;
+    t.resultados += res;
+    t.inversion += inv;
+    const m = r.moneda || 'PEN';
+    const g = t.monedas[m] = t.monedas[m] || { inversion: 0, resultados: 0, impresiones: 0, clics: 0 };
+    g.inversion += inv;
+    g.resultados += res;
+    g.impresiones += Number(r.impresiones) || 0;
+    g.clics += Number(r.clics) || 0;
   });
   const r2 = n => Math.round(n * 100) / 100;
+  Object.keys(t.monedas).forEach(m => {
+    const g = t.monedas[m];
+    g.inversion = r2(g.inversion);
+    g.cpr = g.resultados ? r2(g.inversion / g.resultados) : null;
+    g.cpm = g.impresiones ? r2(g.inversion / g.impresiones * 1000) : null;
+    g.cpc = g.clics ? r2(g.inversion / g.clics) : null;
+  });
+  const lista = Object.keys(t.monedas);
+  t.moneda = lista.length === 1 ? lista[0] : lista.length ? 'MIXTA' : null;
+  const unica = t.moneda && t.moneda !== 'MIXTA' ? t.monedas[t.moneda] : null;
   t.inversion = r2(t.inversion);
-  t.cpr = t.resultados ? r2(t.inversion / t.resultados) : null;
+  t.cpr = unica ? unica.cpr : null;
+  t.cpm = unica ? unica.cpm : null;
+  t.cpc = unica ? unica.cpc : null;
   t.ctr = t.impresiones ? r2(t.clics / t.impresiones * 100) : null;
-  t.cpm = t.impresiones ? r2(t.inversion / t.impresiones * 1000) : null;
-  t.cpc = t.clics ? r2(t.inversion / t.clics) : null;
   return t;
 }
 
 const variacion_ = (a, b) => (b ? Math.round((a - b) / b * 1000) / 10 : null);
+
+/** Variación de un monto por moneda: { PEN: %, USD: % }. */
+function variacionPorMoneda_(a, b, campo) {
+  const v = {};
+  MONEDAS.forEach(m => {
+    if (a.monedas[m] && b.monedas[m]) v[m] = variacion_(a.monedas[m][campo], b.monedas[m][campo]);
+  });
+  return v;
+}
 
 function clavePeriodo_(fecha, gran) {
   if (gran === 'mes') return fecha.slice(0, 7);
@@ -274,14 +302,13 @@ function clavePeriodo_(fecha, gran) {
  * Informe del periodo [desde, hasta] comparado con [antDesde, antHasta]
  * (si no se indica, los mismos días inmediatamente anteriores).
  */
-function getInforme(token, desde, hasta, marca, antDesde, antHasta, moneda) {
+function getInforme(token, desde, hasta, marca, antDesde, antHasta) {
   const u = sesion_(token);
   exigirGestor_(u);
   desde = texto_(desde, 10);
   hasta = texto_(hasta, 10);
   marca = texto_(marca, 100);
-  moneda = MONEDAS.indexOf(moneda) >= 0 ? moneda : (config_().moneda_informe || 'PEN');
-  const tot = l => totales_(l, moneda);
+  const tot = totales_;
   if (!esFecha_(desde) || !esFecha_(hasta) || desde > hasta) throw new Error('Rango de fechas no válido.');
   if (desde > hoy_()) throw new Error('El periodo todavía no empieza.');
 
@@ -321,8 +348,10 @@ function getInforme(token, desde, hasta, marca, antDesde, antHasta, moneda) {
   const porMes = {};
   pauta.forEach(r => { (porMes[r.fecha.slice(0, 7)] = porMes[r.fecha.slice(0, 7)] || []).push(r); });
   const hist = historico.map(m => ({ k: m, t: tot(porMes[m] || []) }));
+  // Promedio histórico del costo por resultado: solo si todo está en una misma moneda.
   const previos = hist.filter(h => h.k < desde.slice(0, 7) && h.t.resultados > 0).slice(-6);
-  const cprHistorico = previos.length ? Math.round(previos.reduce((s, h) => s + h.t.inversion, 0) / previos.reduce((s, h) => s + h.t.resultados, 0) * 100) / 100 : null;
+  const mismaMoneda = tA.moneda && tA.moneda !== 'MIXTA' && previos.every(h => h.t.moneda === tA.moneda);
+  const cprHistorico = previos.length && mismaMoneda ? Math.round(previos.reduce((s, h) => s + h.t.inversion, 0) / previos.reduce((s, h) => s + h.t.resultados, 0) * 100) / 100 : null;
 
   const marcas = lista_('marcas');
   const porMarca = marcas.concat(Object.keys(actual.reduce((o, r) => { if (marcas.indexOf(r.marca) < 0) o[r.marca] = 1; return o; }, {})))
@@ -349,9 +378,8 @@ function getInforme(token, desde, hasta, marca, antDesde, antHasta, moneda) {
       impresiones: variacion_(tA.impresiones, tB.impresiones), cpm: variacion_(tA.cpm, tB.cpm)
     },
     cprHistorico: cprHistorico,
-    moneda: moneda, simbolo: SIMBOLO[moneda], tipoCambio: tipoCambio_(hasta.slice(0, 7)),
-    // Moneda original de cada marca (para avisar qué se convirtió).
-    monedasOriginales: Array.from(new Set(actual.concat(anterior).map(r => r.marca + ':' + (r.moneda || 'PEN')))).sort(),
+    variacionesPorMoneda: { inversion: variacionPorMoneda_(tA, tB, 'inversion'), cpr: variacionPorMoneda_(tA, tB, 'cpr') },
+    simbolos: SIMBOLO,
     serie: serie, historico: hist, porMarca: porMarca, campanas: campanas.slice(0, 15),
     redes: redes, contenido: contenido, operacion: operacion,
     hayPauta: pauta.length > 0
@@ -445,8 +473,9 @@ function informeOperacion_(desde, hasta, marca) {
 
 /** Lecturas automáticas en lenguaje simple para el informe. */
 function interpretar_(inf, campanas) {
-  const mon = inf.simbolo + ' ';
+  const sim = m => SIMBOLO[m] + ' ';
   const n = v => Number(v).toLocaleString('es-PE', { maximumFractionDigits: 2 });
+  const n2 = v => Number(v).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const pct = v => (v > 0 ? '+' : '') + n(v) + '%';
   const t = inf.totales;
   const v = inf.variaciones;
@@ -457,36 +486,56 @@ function interpretar_(inf, campanas) {
   } else if (!t.inversion) {
     out.push({ tono: 'neutro', texto: 'No hubo inversión en pauta en este periodo.' });
   } else {
-    out.push({ tono: 'neutro', texto: 'Se invirtieron ' + mon + n(t.inversion) +
-      (v.inversion !== null ? ' (' + pct(v.inversion) + ' vs. el periodo anterior)' : '') + ' y se obtuvieron ' + n(t.resultados) + ' resultados.' });
-    if (t.cpr !== null) {
-      let txt = 'Cada resultado costó en promedio ' + mon + n(t.cpr);
+    // Cada moneda se analiza por separado: los montos en soles y en dólares no se suman ni se convierten.
+    const monedas = MONEDAS.filter(m => t.monedas[m]);
+    const varias = monedas.length > 1;
+    const vi = inf.variacionesPorMoneda.inversion;
+    const vc = inf.variacionesPorMoneda.cpr;
+    const nombreMoneda = m => (m === 'PEN' ? 'soles' : 'dólares');
+    out.push({ tono: 'neutro', texto: 'Se invirtieron ' +
+      monedas.map(m => sim(m) + n2(t.monedas[m].inversion) + (vi[m] !== undefined && vi[m] !== null ? ' (' + pct(vi[m]) + ' vs. el periodo anterior)' : '')).join(' + ') +
+      ' y se obtuvieron ' + n(t.resultados) + ' resultados.' + (varias ? ' Los montos en soles y en dólares se informan por separado.' : '') });
+
+    monedas.forEach(m => {
+      const g = t.monedas[m];
+      if (g.cpr === null) return;
+      let txt = (varias ? 'En las cuentas en ' + nombreMoneda(m) + ', cada' : 'Cada') + ' resultado costó en promedio ' + sim(m) + n2(g.cpr);
       let tono = 'neutro';
-      if (v.cpr !== null) {
-        txt += v.cpr < 0 ? ', ' + n(Math.abs(v.cpr)) + '% más barato que el periodo anterior' : v.cpr > 0 ? ', ' + n(v.cpr) + '% más caro que el periodo anterior' : ', igual que el periodo anterior';
-        tono = v.cpr <= -5 ? 'bueno' : v.cpr >= 5 ? 'malo' : 'neutro';
+      const x = vc[m];
+      if (x !== undefined && x !== null) {
+        txt += x < 0 ? ', ' + n(Math.abs(x)) + '% más barato que el periodo anterior' : x > 0 ? ', ' + n(x) + '% más caro que el periodo anterior' : ', igual que el periodo anterior';
+        tono = x <= -5 ? 'bueno' : x >= 5 ? 'malo' : 'neutro';
       }
-      if (inf.cprHistorico) {
-        const d = Math.round((t.cpr - inf.cprHistorico) / inf.cprHistorico * 100);
-        txt += '. Frente al promedio de los últimos meses (' + mon + n(inf.cprHistorico) + ') está ' + (d <= 0 ? n(Math.abs(d)) + '% por debajo' : n(d) + '% por encima');
+      if (!varias && inf.cprHistorico) {
+        const d = Math.round((g.cpr - inf.cprHistorico) / inf.cprHistorico * 100);
+        txt += '. Frente al promedio de los últimos meses (' + sim(m) + n2(inf.cprHistorico) + ') está ' + (d <= 0 ? n(Math.abs(d)) + '% por debajo' : n(d) + '% por encima');
       }
       out.push({ tono: tono, texto: txt + '.' });
-    }
+    });
+
     if (v.ctr !== null && Math.abs(v.ctr) >= 10) {
       out.push({ tono: v.ctr > 0 ? 'bueno' : 'malo', texto: 'La tasa de clics (CTR) ' + (v.ctr > 0 ? 'mejoró ' : 'bajó ') + n(Math.abs(v.ctr)) + '%: los anuncios ' + (v.ctr > 0 ? 'están captando más' : 'están captando menos') + ' la atención.' });
     }
-    const conRes = inf.porMarca.filter(m => m.actual.cpr !== null && m.actual.inversion >= t.inversion * 0.05);
-    if (conRes.length >= 2) {
-      const orden = conRes.slice().sort((a, b) => a.actual.cpr - b.actual.cpr);
-      out.push({ tono: 'bueno', texto: orden[0].marca + ' es la marca más eficiente: ' + mon + n(orden[0].actual.cpr) + ' por resultado.' });
-      out.push({ tono: 'malo', texto: orden[orden.length - 1].marca + ' tiene el costo por resultado más alto: ' + mon + n(orden[orden.length - 1].actual.cpr) + '.' });
-    }
-    const sinRes = campanas.filter(c => c.inversion >= Math.max(50, t.inversion * 0.05) && !c.resultados);
+
+    // Eficiencia entre marcas: solo se comparan marcas que pautan en la misma moneda.
+    monedas.forEach(m => {
+      const grupo = inf.porMarca.filter(x => x.actual.moneda === m && x.actual.cpr !== null && x.actual.inversion >= t.monedas[m].inversion * 0.05);
+      if (grupo.length < 2) return;
+      const orden = grupo.slice().sort((a, b) => a.actual.cpr - b.actual.cpr);
+      const sufijo = varias ? ' (entre las cuentas en ' + nombreMoneda(m) + ')' : '';
+      out.push({ tono: 'bueno', texto: orden[0].marca + ' es la marca más eficiente' + sufijo + ': ' + sim(m) + n2(orden[0].actual.cpr) + ' por resultado.' });
+      out.push({ tono: 'malo', texto: orden[orden.length - 1].marca + ' tiene el costo por resultado más alto' + sufijo + ': ' + sim(m) + n2(orden[orden.length - 1].actual.cpr) + '.' });
+    });
+
+    const relevante = c => c.moneda && c.moneda !== 'MIXTA' && t.monedas[c.moneda] && c.inversion >= t.monedas[c.moneda].inversion * 0.05;
+    const sinRes = campanas.filter(c => relevante(c) && c.inversion >= 50 && !c.resultados);
     if (sinRes.length) {
-      out.push({ tono: 'malo', texto: 'Revisar: ' + sinRes.slice(0, 3).map(c => '«' + c.campana + '» (' + c.marca + ', ' + mon + n(c.inversion) + ')').join(', ') + ' invirtieron sin resultados registrados.' });
+      out.push({ tono: 'malo', texto: 'Revisar: ' + sinRes.slice(0, 3).map(c => '«' + c.campana + '» (' + c.marca + ', ' + montoTexto_(c) + ')').join(', ') + ' invirtieron sin resultados registrados.' });
     }
-    const top = campanas.filter(c => c.cpr !== null && c.inversion >= t.inversion * 0.05).sort((a, b) => a.cpr - b.cpr)[0];
-    if (top) out.push({ tono: 'bueno', texto: 'Campaña destacada: «' + top.campana + '» (' + top.marca + ') con ' + n(top.resultados) + ' resultados a ' + mon + n(top.cpr) + ' cada uno.' });
+    monedas.forEach(m => {
+      const top = campanas.filter(c => c.moneda === m && c.cpr !== null && relevante(c)).sort((a, b) => a.cpr - b.cpr)[0];
+      if (top) out.push({ tono: 'bueno', texto: 'Campaña destacada: «' + top.campana + '» (' + top.marca + ') con ' + n(top.resultados) + ' resultados a ' + sim(m) + n2(top.cpr) + ' cada uno.' });
+    });
   }
 
   const redes = inf.redes.cuentas.filter(c => c.crecimiento !== null);

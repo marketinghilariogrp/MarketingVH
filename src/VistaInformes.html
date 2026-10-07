@@ -75,16 +75,26 @@
         const hasta = S.hastaInf || S.hoy;
         r = { desde, hasta, texto: `Del ${fmtFecha(desde)} al ${fmtFecha(hasta)}` };
       } else r = rangoPeriodo(tipo, ancla);
-      const d = await api('getInforme', r.desde, r.hasta, marca, r.antDesde || '', r.antHasta || '', S.monedaInf || '');
+      const d = await api('getInforme', r.desde, r.hasta, marca, r.antDesde || '', r.antHasta || '');
       if (S.vista !== 'informes') return;
       const t = d.totales;
       const v = d.variaciones;
-      const m = d.simbolo + ' ';
-      // Marcas cuya cuenta está en otra moneda: se convierten con el tipo de cambio de Config.
-      const convertidas = d.monedasOriginales.filter(x => !x.endsWith(':' + d.moneda)).map(x => x.split(':')[0]);
-      const notaCambio = convertidas.length
-        ? `Montos en ${d.moneda === 'PEN' ? 'soles' : 'dólares'}. ${esc(convertidas.join(', '))} ${convertidas.length > 1 ? 'pautan' : 'pauta'} en ${d.moneda === 'PEN' ? 'dólares' : 'soles'} y se convirtió a 1 US$ = S/ ${fmtNum(d.tipoCambio, 2)}.`
-        : `Montos en ${d.moneda === 'PEN' ? 'soles (S/)' : 'dólares (US$)'}.`;
+      // Los montos no se convierten: cada uno lleva el símbolo de su cuenta (S/ o $) y, si se mezclan, van por separado.
+      const SIM = d.simbolos;
+      const MON = ['PEN', 'USD'];
+      const monedasT = MON.filter(k => t.monedas[k]);
+      const varias = monedasT.length > 1;
+      const monto = (x, campo = 'inversion') => {
+        const ks = MON.filter(k => x.monedas && x.monedas[k] && x.monedas[k][campo] !== null);
+        return ks.length ? ks.map(k => `${SIM[k]} ${fmtNum(x.monedas[k][campo], 2)}`).join('<br>') : '—';
+      };
+      const deltaMoneda = (vm, menosEsMejor) => {
+        const ks = MON.filter(k => vm && vm[k] !== undefined);
+        if (!ks.length) return delta(null);
+        return ks.map(k => delta(vm[k], menosEsMejor).replace('vs. periodo anterior', (varias ? SIM[k] + ' ' : '') + 'vs. periodo anterior')).join('');
+      };
+      const notaMoneda = varias ? 'Nexo pauta en soles (S/) y las demás marcas en dólares ($): los montos se muestran por separado, tal como vienen de las hojas, sin convertir.'
+        : monedasT.length ? `Montos en ${monedasT[0] === 'PEN' ? 'soles (S/)' : 'dólares ($)'}, tal como vienen de las hojas de pauta.` : '';
       const tono = { bueno: 'sube', malo: 'baja', neutro: '' };
       const icon = { bueno: '▲', malo: '▼', neutro: '●' };
 
@@ -94,9 +104,7 @@
           <div class="controles">
             ${tipo === 'rango' ? `<input type="date" id="fDesdeI" value="${r.desde}"><input type="date" id="fHastaI" value="${r.hasta}">`
               : `<button class="btn-ico" data-mov="-1" aria-label="Anterior">‹</button><strong>${esc(r.texto)}</strong><button class="btn-ico" data-mov="1" aria-label="Siguiente">›</button>`}
-            <select id="fMarcaI" aria-label="Marca">${opciones(S.cfg.marcas, marca, 'Todas las marcas')}</select>
-            <select id="fMonedaI" aria-label="Moneda">${opciones([['PEN', 'Soles (S/)'], ['USD', 'Dólares (US$)']], d.moneda)}</select>
-            <button class="btn" id="bFuentes">Fuentes de datos</button>
+            <select id="fMarcaI" aria-label="Marca">${opciones(S.cfg.marcas, marca, 'Todas las marcas')}</select>            <button class="btn" id="bFuentes">Fuentes de datos</button>
             <button class="btn primario" id="bImprimir">Imprimir / PDF</button>
           </div>
         </div>
@@ -114,11 +122,11 @@
         </section>
 
         <h2 class="seccion">Pauta publicitaria</h2>
-        ${d.hayPauta ? `<p class="sub">${notaCambio}</p>` : ''}
+        ${d.hayPauta ? `<p class="sub">${notaMoneda}</p>` : ''}
         <div class="kpis">
-          <div class="kpi"><span class="kpi-v">${m}${fmtNum(t.inversion, 2)}</span><span class="kpi-k">Inversión</span>${delta(v.inversion)}</div>
+          <div class="kpi"><span class="kpi-v${varias ? ' doble' : ''}">${monto(t)}</span><span class="kpi-k">Inversión</span>${deltaMoneda(d.variacionesPorMoneda.inversion)}</div>
           <div class="kpi"><span class="kpi-v">${fmtNum(t.resultados)}</span><span class="kpi-k">Resultados</span>${delta(v.resultados)}</div>
-          <div class="kpi"><span class="kpi-v">${t.cpr === null ? '—' : m + fmtNum(t.cpr, 2)}</span><span class="kpi-k">Costo por resultado</span>${delta(v.cpr, true)}</div>
+          <div class="kpi"><span class="kpi-v${varias ? ' doble' : ''}">${monto(t, 'cpr')}</span><span class="kpi-k">Costo por resultado</span>${deltaMoneda(d.variacionesPorMoneda.cpr, true)}</div>
           <div class="kpi"><span class="kpi-v">${fmtNum(t.alcance)}</span><span class="kpi-k">Alcance (suma diaria)</span>${delta(v.alcance)}</div>
           <div class="kpi"><span class="kpi-v">${fmtNum(t.impresiones)}</span><span class="kpi-k">Impresiones</span>${delta(v.impresiones)}</div>
           <div class="kpi"><span class="kpi-v">${t.ctr === null ? '—' : fmtNum(t.ctr, 2) + '%'}</span><span class="kpi-k">CTR (clics ÷ impresiones)</span>${delta(v.ctr)}</div>
@@ -127,7 +135,8 @@
         <div class="rejilla">
           <section class="card span2"><h3>Evolución del periodo</h3><p class="sub">Inversión (barras) y resultados (línea) por ${d.granularidad === 'dia' ? 'día' : d.granularidad}.</p>
             <div class="lienzo alto"><canvas id="gSerie"></canvas></div></section>
-          <section class="card"><h3>Inversión por marca</h3><div class="lienzo"><canvas id="gMarcas"></canvas></div></section>
+          <section class="card"><h3>${varias ? 'Resultados por marca' : 'Inversión por marca'}</h3>
+            ${varias ? '<p class="sub">Se muestran resultados porque la inversión está en monedas distintas.</p>' : ''}<div class="lienzo"><canvas id="gMarcas"></canvas></div></section>
           <section class="card"><h3>Costo por resultado por marca</h3><p class="sub">Más bajo es mejor.</p><div class="lienzo"><canvas id="gCprMarca"></canvas></div></section>
           <section class="card span2"><h3>Histórico de 12 meses</h3><p class="sub">Para ver tendencias: inversión mensual y costo por resultado.</p>
             <div class="lienzo alto"><canvas id="gHistorico"></canvas></div></section>
@@ -138,16 +147,16 @@
             <tbody>${d.porMarca.map(x => {
               const vi = x.anterior.inversion ? Math.round((x.actual.inversion - x.anterior.inversion) / x.anterior.inversion * 1000) / 10 : null;
               const vc = x.anterior.cpr && x.actual.cpr !== null ? Math.round((x.actual.cpr - x.anterior.cpr) / x.anterior.cpr * 1000) / 10 : null;
-              return `<tr><td><b>${esc(x.marca)}</b></td><td class="num">${m}${fmtNum(x.actual.inversion, 2)}</td><td class="num">${delta(vi).replace(' vs. periodo anterior', '')}</td>
-                <td class="num">${fmtNum(x.actual.resultados)}</td><td class="num">${x.actual.cpr === null ? '—' : m + fmtNum(x.actual.cpr, 2)}</td>
+              return `<tr><td><b>${esc(x.marca)}</b></td><td class="num">${monto(x.actual)}</td><td class="num">${delta(vi).replace(' vs. periodo anterior', '')}</td>
+                <td class="num">${fmtNum(x.actual.resultados)}</td><td class="num">${monto(x.actual, 'cpr')}</td>
                 <td class="num">${delta(vc, true).replace(' vs. periodo anterior', '')}</td><td class="num">${x.actual.ctr === null ? '—' : fmtNum(x.actual.ctr, 2) + '%'}</td></tr>`;
             }).join('') || '<tr><td colspan="7" class="vacio">Sin inversión en el periodo.</td></tr>'}</tbody>
           </table></div></section>
         <section class="card sin-pad"><div class="cab-card pad"><h3>Campañas con mayor inversión</h3></div>
           <div class="tabla-caja plana"><table>
             <thead><tr><th>Campaña</th><th>Marca</th><th class="num">Inversión</th><th class="num">Resultados</th><th class="num">Costo/resultado</th><th class="num">CTR</th></tr></thead>
-            <tbody>${d.campanas.map(c => `<tr><td class="ancho">${esc(c.campana)}</td><td>${esc(c.marca)}</td><td class="num">${m}${fmtNum(c.inversion, 2)}</td>
-              <td class="num">${fmtNum(c.resultados)}</td><td class="num ${!c.resultados ? 'alerta' : ''}">${c.cpr === null ? 'Sin resultados' : m + fmtNum(c.cpr, 2)}</td>
+            <tbody>${d.campanas.map(c => `<tr><td class="ancho">${esc(c.campana)}</td><td>${esc(c.marca)}</td><td class="num">${monto(c)}</td>
+              <td class="num">${fmtNum(c.resultados)}</td><td class="num ${!c.resultados ? 'alerta' : ''}">${!c.resultados ? 'Sin resultados' : monto(c, 'cpr')}</td>
               <td class="num">${c.ctr === null ? '—' : fmtNum(c.ctr, 2) + '%'}</td></tr>`).join('') || '<tr><td colspan="6" class="vacio">Sin campañas en el periodo.</td></tr>'}</tbody>
           </table></div></section>`
         : `<section class="card aviso-card no-print"><h3>Conecta tus Google Sheets de pauta</h3>
@@ -195,20 +204,23 @@
 
       // Gráficos
       if (d.hayPauta) {
-        grafico('gSerie', { type: 'bar', data: { labels: d.serie.map(s => etiquetaSerie(s.k, d.granularidad)), datasets: [
-          { label: 'Inversión (' + d.simbolo + ')', data: d.serie.map(s => s.t.inversion), backgroundColor: PALETA[0], borderRadius: 4, yAxisID: 'y' },
-          { label: 'Resultados', data: d.serie.map(s => s.t.resultados), type: 'line', borderColor: PALETA[1], backgroundColor: PALETA[1], tension: .3, yAxisID: 'y1' }] },
+        // Una serie de barras por moneda: soles y dólares nunca se suman.
+        const barrasInversion = lista => monedasT.map((k, i) => ({ label: 'Inversión (' + SIM[k] + ')',
+          data: lista.map(s => (s.t.monedas[k] ? s.t.monedas[k].inversion : 0)), backgroundColor: i ? PALETA[2] : PALETA[0], borderRadius: 4, yAxisID: 'y' }));
+        grafico('gSerie', { type: 'bar', data: { labels: d.serie.map(s => etiquetaSerie(s.k, d.granularidad)), datasets: barrasInversion(d.serie).concat([
+          { label: 'Resultados', data: d.serie.map(s => s.t.resultados), type: 'line', borderColor: PALETA[1], backgroundColor: PALETA[1], tension: .3, yAxisID: 'y1' }]) },
           options: { scales: { y: { beginAtZero: true }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } } } } });
-        const pm = d.porMarca.filter(x => x.actual.inversion);
-        grafico('gMarcas', { type: 'doughnut', data: { labels: pm.map(x => x.marca), datasets: [{ data: pm.map(x => x.actual.inversion), backgroundColor: PALETA }] } });
+        const pm = d.porMarca.filter(x => (varias ? x.actual.resultados : x.actual.inversion));
+        grafico('gMarcas', { type: 'doughnut', data: { labels: pm.map(x => x.marca),
+          datasets: [{ data: pm.map(x => (varias ? x.actual.resultados : x.actual.inversion)), backgroundColor: PALETA }] } });
         const pc = d.porMarca.filter(x => x.actual.cpr !== null);
-        grafico('gCprMarca', { type: 'bar', data: { labels: pc.map(x => x.marca), datasets: [
+        grafico('gCprMarca', { type: 'bar', data: { labels: pc.map(x => x.marca + ' (' + (SIM[x.actual.moneda] || '') + ')'), datasets: [
           { label: 'Periodo', data: pc.map(x => x.actual.cpr), backgroundColor: PALETA[0], borderRadius: 4 },
           { label: 'Anterior', data: pc.map(x => x.anterior.cpr), backgroundColor: '#94a3b8', borderRadius: 4 }] },
           options: { indexAxis: 'y', scales: { x: { beginAtZero: true } } } });
-        grafico('gHistorico', { type: 'bar', data: { labels: d.historico.map(h => etiquetaSerie(h.k, 'mes')), datasets: [
-          { label: 'Inversión (' + d.simbolo + ')', data: d.historico.map(h => h.t.inversion), backgroundColor: PALETA[0], borderRadius: 4, yAxisID: 'y' },
-          { label: 'Costo por resultado', data: d.historico.map(h => h.t.cpr), type: 'line', borderColor: PALETA[3], backgroundColor: PALETA[3], tension: .3, spanGaps: true, yAxisID: 'y1' }] },
+        grafico('gHistorico', { type: 'bar', data: { labels: d.historico.map(h => etiquetaSerie(h.k, 'mes')), datasets: barrasInversion(d.historico).concat(
+          monedasT.map((k, i) => ({ label: 'Costo por resultado (' + SIM[k] + ')', data: d.historico.map(h => (h.t.monedas[k] ? h.t.monedas[k].cpr : null)),
+            type: 'line', borderColor: i ? PALETA[5] : PALETA[3], backgroundColor: i ? PALETA[5] : PALETA[3], tension: .3, spanGaps: true, yAxisID: 'y1' }))) },
           options: { scales: { y: { beginAtZero: true }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } } } } });
       }
       if (d.redes.cuentas.length) {
@@ -224,9 +236,7 @@
         $('#fDesdeI').onchange = e => { S.desdeInf = e.target.value; repintar(); };
         $('#fHastaI').onchange = e => { S.hastaInf = e.target.value; repintar(); };
       }
-      $('#fMarcaI').onchange = e => { S.marcaInf = e.target.value; repintar(); };
-      $('#fMonedaI').onchange = e => { S.monedaInf = e.target.value; repintar(); };
-      $('#bImprimir').onclick = () => window.print();
+      $('#fMarcaI').onchange = e => { S.marcaInf = e.target.value; repintar(); };      $('#bImprimir').onclick = () => window.print();
       $('#bFuentes').onclick = () => pintarFuentes();
     }
   };

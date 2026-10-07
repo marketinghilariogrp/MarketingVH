@@ -25,10 +25,7 @@ const CONFIG_INICIAL = [
     '2027-05-01,2027-06-07,2027-06-29,2027-07-23,2027-07-28,2027-07-29,2027-08-06,2027-08-30,2027-10-08,' +
     '2027-11-01,2027-12-08,2027-12-09,2027-12-25', 'Feriados (yyyy-MM-dd) separados por coma'],
   ['moneda', 'S/', 'Símbolo de soles'],
-  ['moneda_informe', 'PEN', 'Moneda en que se muestran los informes por defecto: PEN o USD'],
-  ['marcas_en_soles', 'Nexo', 'Marcas cuya cuenta publicitaria está en soles (PEN); las demás se asumen en dólares si la hoja no lo indica'],
-  ['tipo_cambio_usd', '3.75', 'Soles por 1 dólar para convertir la pauta en USD (actualízalo cuando cambie)'],
-  ['tipo_cambio_mensual', '', 'Opcional, por mes: 2026-10:3.74; 2026-11:3.71 (si falta un mes se usa tipo_cambio_usd)'],
+  ['marcas_en_soles', 'Nexo', 'Marcas cuya cuenta publicitaria está en soles (PEN); las demás se muestran en dólares ($) si la hoja no lo indica'],
   ['umbral_variacion', '30', 'Variación (%) de pauta semana contra semana que genera alerta']
 ];
 
@@ -94,6 +91,16 @@ function setup() {
     migracion3_();
     props.setProperty('MIGRACION', '3');
     console.log('Migración 3 aplicada: fuente de pauta CA-Huacachina del Norte (Nexo).');
+  }
+  if (Number(props.getProperty('MIGRACION') || 0) < 4) {
+    // Los montos ya no se convierten entre monedas: se quitan las claves de tipo de cambio.
+    conLock_(() => {
+      const quitar = ['moneda_informe', 'tipo_cambio_usd', 'tipo_cambio_mensual'];
+      const cfg = leerTabla_('Config');
+      if (cfg.some(c => quitar.indexOf(c.clave) >= 0)) reescribirTabla_('Config', cfg.filter(c => quitar.indexOf(c.clave) < 0));
+    });
+    invalidar_('config');
+    props.setProperty('MIGRACION', '4');
   }
 
   console.log('Archivo de datos: ' + ss.getUrl());
