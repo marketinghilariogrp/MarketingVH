@@ -268,6 +268,22 @@
   /** Vuelve a pintar la vista actual (tras guardar algo). */
   function repintar() { irA(S.vista); }
 
+  /**
+   * En celular las tablas se muestran como tarjetas (ver Estilos.html): cada celda necesita el título
+   * de su columna en data-label. Se rellena solo cada vez que cambia el contenido.
+   */
+  function etiquetarTablas(raiz) {
+    $$('.tabla-caja table:not(.matriz)', raiz).forEach(tabla => {
+      const titulos = $$('thead th', tabla).map(th => th.textContent.trim());
+      $$('tbody tr', tabla).forEach(tr => {
+        Array.from(tr.children).forEach((td, i) => {
+          if (td.dataset.label === undefined) td.dataset.label = td.colSpan > 1 ? '' : (titulos[i] || '');
+        });
+      });
+    });
+  }
+  new MutationObserver(() => etiquetarTablas(document)).observe(document.body, { childList: true, subtree: true });
+
   function arrancar() {
     S.token = leerToken();
     if (!S.token) return vistaLogin();

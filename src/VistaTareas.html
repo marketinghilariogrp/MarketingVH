@@ -35,6 +35,7 @@
   };
 
   function pintarTablero() {
+    S.colMovil = S.colMovil || 'pendiente';
     let tareas = S.tareas;
     if (S.filtro) tareas = tareas.filter(t => t.usuario_id === S.filtro);
     if (S.filtroMarca) tareas = tareas.filter(t => t.marca === S.filtroMarca);
@@ -53,11 +54,18 @@
           ${esGestor() ? '<button class="btn primario" id="bNueva">+ Nueva tarea</button>' : ''}
         </div>
       </div>
+      <div class="pestanas solo-celular" id="pestanasKanban">${cols.map(([e, titulo]) =>
+        `<button class="pestana ${S.colMovil === e ? 'activo' : ''}" data-col="${e}">${titulo} <span class="cuenta">${tareas.filter(t => t.estado === e).length}</span></button>`).join('')}</div>
       <div class="kanban">${cols.map(([e, titulo]) => {
         const lista = tareas.filter(t => t.estado === e);
-        return `<section class="columna"><h3>${titulo}<span class="cuenta">${lista.length}</span></h3>
+        return `<section class="columna${S.colMovil === e ? ' visible' : ''}"><h3>${titulo}<span class="cuenta">${lista.length}</span></h3>
           ${lista.map(tarjeta).join('') || '<p class="vacio">Sin tareas</p>'}</section>`;
       }).join('')}</div>`;
+    // En celular se ve una columna a la vez, elegida con las pestañas.
+    $('#pestanasKanban').onclick = e => {
+      const b = e.target.closest('[data-col]');
+      if (b) { S.colMovil = b.dataset.col; pintarTablero(); }
+    };
 
     $('#bRefrescar').onclick = async () => { try { await recargarTareas(); pintarTablero(); } catch (e) { aviso(e.message, 'error'); } };
     $('#fMarca').onchange = e => { S.filtroMarca = e.target.value; pintarTablero(); };
