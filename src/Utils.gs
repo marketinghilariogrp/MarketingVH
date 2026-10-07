@@ -25,9 +25,10 @@ const ESQUEMA = {
     'detalle', 'origen', 'creado_por', 'actualizada', 'red', 'formato', 'pilar', 'enlace', 'estado_material'],
   Parrillas: ['id', 'marca', 'nombre', 'url', 'activo', 'creado', 'sheet_id', 'ultima_sync', 'estado_sync'],
   // Fuentes de pauta: Google Sheets del equipo que se leen y consolidan en Pauta_diaria.
-  Fuentes_pauta: ['id', 'marca', 'nombre', 'url', 'hoja', 'activo', 'creado', 'ultima_sync', 'estado_sync', 'filas'],
+  Fuentes_pauta: ['id', 'marca', 'nombre', 'url', 'hoja', 'activo', 'creado', 'ultima_sync', 'estado_sync', 'filas', 'moneda'],
+  // inversion está en la moneda original de la cuenta (columna moneda: PEN o USD).
   Pauta_diaria: ['fuente_id', 'marca', 'fecha', 'fecha_fin', 'campana', 'inversion', 'alcance', 'impresiones',
-    'clics', 'resultados', 'tipo_resultado', 'leads', 'mensajes'],
+    'clics', 'resultados', 'tipo_resultado', 'leads', 'mensajes', 'moneda'],
   Redes_cuentas: ['id', 'marca', 'red', 'usuario', 'url', 'activo'],
   Redes_metricas: ['id', 'cuenta_id', 'mes', 'seguidores', 'alcance', 'visualizaciones', 'interacciones',
     'publicaciones', 'registrado_por', 'actualizado'],

@@ -75,11 +75,16 @@
         const hasta = S.hastaInf || S.hoy;
         r = { desde, hasta, texto: `Del ${fmtFecha(desde)} al ${fmtFecha(hasta)}` };
       } else r = rangoPeriodo(tipo, ancla);
-      const d = await api('getInforme', r.desde, r.hasta, marca, r.antDesde || '', r.antHasta || '');
+      const d = await api('getInforme', r.desde, r.hasta, marca, r.antDesde || '', r.antHasta || '', S.monedaInf || '');
       if (S.vista !== 'informes') return;
       const t = d.totales;
       const v = d.variaciones;
-      const m = S.cfg.moneda + ' ';
+      const m = d.simbolo + ' ';
+      // Marcas cuya cuenta está en otra moneda: se convierten con el tipo de cambio de Config.
+      const convertidas = d.monedasOriginales.filter(x => !x.endsWith(':' + d.moneda)).map(x => x.split(':')[0]);
+      const notaCambio = convertidas.length
+        ? `Montos en ${d.moneda === 'PEN' ? 'soles' : 'dólares'}. ${esc(convertidas.join(', '))} ${convertidas.length > 1 ? 'pautan' : 'pauta'} en ${d.moneda === 'PEN' ? 'dólares' : 'soles'} y se convirtió a 1 US$ = S/ ${fmtNum(d.tipoCambio, 2)}.`
+        : `Montos en ${d.moneda === 'PEN' ? 'soles (S/)' : 'dólares (US$)'}.`;
       const tono = { bueno: 'sube', malo: 'baja', neutro: '' };
       const icon = { bueno: '▲', malo: '▼', neutro: '●' };
 
@@ -90,6 +95,7 @@
             ${tipo === 'rango' ? `<input type="date" id="fDesdeI" value="${r.desde}"><input type="date" id="fHastaI" value="${r.hasta}">`
               : `<button class="btn-ico" data-mov="-1" aria-label="Anterior">‹</button><strong>${esc(r.texto)}</strong><button class="btn-ico" data-mov="1" aria-label="Siguiente">›</button>`}
             <select id="fMarcaI" aria-label="Marca">${opciones(S.cfg.marcas, marca, 'Todas las marcas')}</select>
+            <select id="fMonedaI" aria-label="Moneda">${opciones([['PEN', 'Soles (S/)'], ['USD', 'Dólares (US$)']], d.moneda)}</select>
             <button class="btn" id="bFuentes">Fuentes de datos</button>
             <button class="btn primario" id="bImprimir">Imprimir / PDF</button>
           </div>
@@ -108,6 +114,7 @@
         </section>
 
         <h2 class="seccion">Pauta publicitaria</h2>
+        ${d.hayPauta ? `<p class="sub">${notaCambio}</p>` : ''}
         <div class="kpis">
           <div class="kpi"><span class="kpi-v">${m}${fmtNum(t.inversion, 2)}</span><span class="kpi-k">Inversión</span>${delta(v.inversion)}</div>
           <div class="kpi"><span class="kpi-v">${fmtNum(t.resultados)}</span><span class="kpi-k">Resultados</span>${delta(v.resultados)}</div>
@@ -189,7 +196,7 @@
       // Gráficos
       if (d.hayPauta) {
         grafico('gSerie', { type: 'bar', data: { labels: d.serie.map(s => etiquetaSerie(s.k, d.granularidad)), datasets: [
-          { label: 'Inversión (' + S.cfg.moneda + ')', data: d.serie.map(s => s.t.inversion), backgroundColor: PALETA[0], borderRadius: 4, yAxisID: 'y' },
+          { label: 'Inversión (' + d.simbolo + ')', data: d.serie.map(s => s.t.inversion), backgroundColor: PALETA[0], borderRadius: 4, yAxisID: 'y' },
           { label: 'Resultados', data: d.serie.map(s => s.t.resultados), type: 'line', borderColor: PALETA[1], backgroundColor: PALETA[1], tension: .3, yAxisID: 'y1' }] },
           options: { scales: { y: { beginAtZero: true }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } } } } });
         const pm = d.porMarca.filter(x => x.actual.inversion);
@@ -200,7 +207,7 @@
           { label: 'Anterior', data: pc.map(x => x.anterior.cpr), backgroundColor: '#94a3b8', borderRadius: 4 }] },
           options: { indexAxis: 'y', scales: { x: { beginAtZero: true } } } });
         grafico('gHistorico', { type: 'bar', data: { labels: d.historico.map(h => etiquetaSerie(h.k, 'mes')), datasets: [
-          { label: 'Inversión (' + S.cfg.moneda + ')', data: d.historico.map(h => h.t.inversion), backgroundColor: PALETA[0], borderRadius: 4, yAxisID: 'y' },
+          { label: 'Inversión (' + d.simbolo + ')', data: d.historico.map(h => h.t.inversion), backgroundColor: PALETA[0], borderRadius: 4, yAxisID: 'y' },
           { label: 'Costo por resultado', data: d.historico.map(h => h.t.cpr), type: 'line', borderColor: PALETA[3], backgroundColor: PALETA[3], tension: .3, spanGaps: true, yAxisID: 'y1' }] },
           options: { scales: { y: { beginAtZero: true }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } } } } });
       }
@@ -218,6 +225,7 @@
         $('#fHastaI').onchange = e => { S.hastaInf = e.target.value; repintar(); };
       }
       $('#fMarcaI').onchange = e => { S.marcaInf = e.target.value; repintar(); };
+      $('#fMonedaI').onchange = e => { S.monedaInf = e.target.value; repintar(); };
       $('#bImprimir').onclick = () => window.print();
       $('#bFuentes').onclick = () => pintarFuentes();
     }
@@ -232,13 +240,13 @@
         <div class="controles"><button class="btn mini" id="bSyncF">↻ Sincronizar ahora</button><button class="btn mini primario" id="bNuevaF">+ Agregar Google Sheet</button></div></div>
       <p class="sub">Se leen cada hora. El archivo debe ser un Google Sheet (no .xlsx) y la cuenta marketing@hilariogrp.com debe tener acceso.</p>
       <div class="tabla-caja plana"><table>
-        <thead><tr><th>Fuente</th><th>Marca</th><th>Pestaña</th><th>Última lectura</th><th></th></tr></thead>
+        <thead><tr><th>Fuente</th><th>Marca</th><th>Pestaña</th><th>Moneda</th><th>Última lectura</th><th></th></tr></thead>
         <tbody>${fuentes.map(f => `<tr><td><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.nombre)} ↗</a></td><td>${esc(f.marca)}</td>
-          <td>${esc(f.hoja || 'Primera')}</td>
+          <td>${esc(f.hoja || 'Diario / primera')}</td><td>${esc(f.moneda || 'Automática')}</td>
           <td>${f.ultima_sync ? fmtFecha(f.ultima_sync) + ' ' + esc(f.ultima_sync.slice(11, 16)) : '—'}
-            <small class="${String(f.estado_sync).indexOf('Error') === 0 ? 'alerta' : ''}">${esc(f.estado_sync)}${f.estado_sync === 'OK' ? ' · ' + f.filas + ' filas' : ''}</small></td>
+            <small class="${String(f.estado_sync).indexOf('Error') === 0 ? 'alerta' : ''}">${esc(f.estado_sync)}${String(f.estado_sync).indexOf('OK') === 0 ? ' · ' + f.filas + ' filas' : ''}</small></td>
           <td><button class="btn-ico" data-fuente="${esc(f.id)}" aria-label="Editar">✎</button></td></tr>`).join('')
-          || '<tr><td colspan="5" class="vacio">Aún no hay fuentes.</td></tr>'}</tbody>
+          || '<tr><td colspan="6" class="vacio">Aún no hay fuentes.</td></tr>'}</tbody>
       </table></div></section>`;
     $('#bNuevaF').onclick = () => formFuente(null);
     $('#bSyncF').onclick = async e => {
@@ -258,8 +266,9 @@
       <label>Nombre<input name="nombre" required maxlength="120" value="${esc(x.nombre)}" placeholder="Ej.: Pauta Nexo diaria"></label>
       <div class="dos">
         <label>Marca<select name="marca" required>${opciones(S.cfg.marcas.concat([['(Columna Marca)', 'Varias (según columna «Marca»)']]), x.marca, 'Elegir…')}</select></label>
-        <label>Pestaña (opcional)<input name="hoja" maxlength="200" value="${esc(x.hoja)}" placeholder="Vacío = primera · * = todas"></label>
+        <label>Pestaña (opcional)<input name="hoja" maxlength="200" value="${esc(x.hoja)}" placeholder="Vacío = «Diario» o la primera"></label>
       </div>
+      <label>Moneda de la cuenta<select name="moneda">${opciones([['PEN', 'Soles (PEN)'], ['USD', 'Dólares (USD)']], x.moneda, 'Automática (según lo que diga la hoja)')}</select></label>
       <label>Enlace del Google Sheet<input name="url" type="url" required value="${esc(x.url)}" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
       ${f ? '<label class="check"><input type="checkbox" name="quitar"> Quitar esta fuente</label>' : ''}`,
       async d => {

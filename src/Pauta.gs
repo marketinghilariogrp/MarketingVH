@@ -27,7 +27,7 @@ function listarFuentes(token) {
   const u = sesion_(token);
   exigirGestor_(u);
   return leerTabla_('Fuentes_pauta').filter(f => f.activo === 'SI').map(f => ({
-    id: f.id, marca: f.marca, nombre: f.nombre, url: f.url, hoja: f.hoja,
+    id: f.id, marca: f.marca, nombre: f.nombre, url: f.url, hoja: f.hoja, moneda: f.moneda,
     ultima_sync: f.ultima_sync, estado_sync: f.estado_sync, filas: Number(f.filas) || 0
   }));
 }
@@ -40,7 +40,8 @@ function guardarFuente(token, d) {
     marca: d.marca === MARCA_DESDE_COLUMNA ? MARCA_DESDE_COLUMNA : opcion_(d.marca, lista_('marcas'), 'Elige la marca.'),
     nombre: texto_(d.nombre, 120),
     url: texto_(d.url, 500),
-    hoja: texto_(d.hoja, 200)
+    hoja: texto_(d.hoja, 200),
+    moneda: d.moneda ? opcion_(d.moneda, MONEDAS, 'Moneda no válida.') : ''
   };
   if (!datos.nombre) throw new Error('Escribe un nombre para la fuente.');
   if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[\w-]+/.test(datos.url)) {
@@ -93,6 +94,48 @@ function marcaDesdeTexto_(texto, marcas) {
   return marcas.find(m => t.indexOf(normal_(m)) >= 0 || normal_(m).indexOf(t) >= 0) || texto;
 }
 
+/* ---------- Monedas: cada cuenta publicitaria puede estar en PEN o USD ---------- */
+
+const MONEDAS = ['PEN', 'USD'];
+const SIMBOLO = { PEN: 'S/', USD: 'US$' };
+
+/** PEN o USD si el texto lo indica («13.32 PEN», «US$ 5», «Importe gastado (USD)», «Moneda PEN»…). */
+function monedaEnTexto_(s) {
+  const t = String(s == null ? '' : s).toUpperCase();
+  if (/\bUSD\b|US\$|DÓLAR|DOLAR/.test(t)) return 'USD';
+  if (/\bPEN\b|S\/|SOLES/.test(t)) return 'PEN';
+  return '';
+}
+
+/** Moneda de una hoja: encabezado de inversión, filas de título o la pestaña «Info» (fila «Moneda»). */
+function monedaDeHoja_(ss, valores, filaCab, colInversion) {
+  const enCab = monedaEnTexto_(valores[filaCab][colInversion]);
+  if (enCab) return enCab;
+  for (let i = 0; i < filaCab; i++) {
+    const m = valores[i].map(monedaEnTexto_).find(String);
+    if (m) return m;
+  }
+  const info = ss.getSheetByName('Info');
+  if (info) {
+    const fila = info.getDataRange().getValues().find(r => normal_(r[0]) === 'moneda');
+    if (fila) return monedaEnTexto_(fila[1]);
+  }
+  return '';
+}
+
+function tipoCambio_(mes) {
+  const cfg = config_();
+  const m = String(cfg.tipo_cambio_mensual || '').split(';').map(s => s.trim().split(':'))
+    .find(p => p[0] === mes && Number(p[1]) > 0);
+  return m ? Number(m[1]) : (Number(cfg.tipo_cambio_usd) || 3.75);
+}
+
+function convertir_(monto, de, a, fecha) {
+  if (!monto || !de || de === a) return monto;
+  const tc = tipoCambio_(String(fecha).slice(0, 7));
+  return de === 'USD' ? monto * tc : monto / tc;
+}
+
 function leerFuente_(fuente, marcas) {
   const ss = SpreadsheetApp.openByUrl(fuente.url);
   // Sin pestaña indicada se usa «Diario» (una fila por campaña y día) si existe; si no, la primera.
@@ -111,13 +154,18 @@ function leerFuente_(fuente, marcas) {
     }
     if (!mapa) throw new Error('En «' + sh.getName() + '» no encontré columnas de fecha e inversión.');
     const val = (r, k) => (mapa[k] === undefined ? '' : r[mapa[k]]);
+    // Moneda: la elegida en la fuente; si no, la que diga la hoja; si no, PEN para las marcas de Config.marcas_en_soles y USD para las demás.
+    const monedaHoja = fuente.moneda || monedaDeHoja_(ss, valores, fila, mapa.inversion);
     valores.slice(fila + 1).forEach(r => {
       const fecha = fechaCelda_(val(r, 'fecha'));
       if (!fecha) return;
       const marca = fuente.marca === MARCA_DESDE_COLUMNA ? marcaDesdeTexto_(val(r, 'marca'), marcas) : fuente.marca;
       const campana = String(val(r, 'campana')).trim();
       if (normal_(campana).indexOf('total') === 0) return;
+      const moneda = fuente.moneda || monedaEnTexto_(val(r, 'inversion')) || monedaHoja ||
+        (lista_('marcas_en_soles').indexOf(marca) >= 0 ? 'PEN' : 'USD');
       filas.push({
+        moneda: moneda,
         fuente_id: fuente.id, marca: marca, fecha: fecha, fecha_fin: fechaCelda_(val(r, 'fecha_fin')) || fecha,
         campana: campana || '(sin nombre)', inversion: num_(val(r, 'inversion')), alcance: num_(val(r, 'alcance')),
         impresiones: num_(val(r, 'impresiones')), clics: num_(val(r, 'clics')), resultados: num_(val(r, 'resultados')),
@@ -138,7 +186,8 @@ function sincronizarPauta_() {
     try {
       const filas = leerFuente_(f, marcas);
       filas.forEach(x => todas.push(x));
-      estados[f.id] = { estado: 'OK', filas: filas.length };
+      const monedas = Array.from(new Set(filas.map(x => x.moneda))).join('/');
+      estados[f.id] = { estado: 'OK' + (monedas ? ' · ' + monedas : ''), filas: filas.length };
     } catch (e) {
       // Si una fuente falla se conservan sus datos anteriores.
       leerTabla_('Pauta_diaria').filter(x => x.fuente_id === f.id).forEach(x => todas.push(x));
@@ -173,7 +222,7 @@ function sincronizarFuentes() {
 /** Variaciones fuertes de los últimos 7 días vs. los 7 anteriores, por marca (para las alertas). */
 function alertasPauta_() {
   const umbral = Number(config_().umbral_variacion) || 30;
-  const mon = (config_().moneda || 'S/') + ' ';
+  const mon = SIMBOLO[config_().moneda_informe || 'PEN'] + ' ';
   const hoy = hoy_();
   const a1 = sumarDias_(hoy, -6);
   const b0 = sumarDias_(hoy, -13);
@@ -194,10 +243,13 @@ function alertasPauta_() {
 
 /* ---------- Informe ejecutivo ---------- */
 
-function totales_(filas) {
+/** Suma métricas; la inversión se convierte a la moneda pedida (por defecto Config.moneda_informe). */
+function totales_(filas, moneda) {
+  moneda = moneda || config_().moneda_informe || 'PEN';
   const t = { inversion: 0, alcance: 0, impresiones: 0, clics: 0, resultados: 0, leads: 0, mensajes: 0 };
   filas.forEach(r => {
-    ['inversion', 'alcance', 'impresiones', 'clics', 'leads', 'mensajes'].forEach(k => { t[k] += Number(r[k]) || 0; });
+    ['alcance', 'impresiones', 'clics', 'leads', 'mensajes'].forEach(k => { t[k] += Number(r[k]) || 0; });
+    t.inversion += convertir_(Number(r.inversion) || 0, r.moneda || 'PEN', moneda, r.fecha);
     const res = Number(r.resultados) || 0;
     t.resultados += res > 0 ? res : (Number(r.leads) || 0) + (Number(r.mensajes) || 0);
   });
@@ -222,12 +274,14 @@ function clavePeriodo_(fecha, gran) {
  * Informe del periodo [desde, hasta] comparado con [antDesde, antHasta]
  * (si no se indica, los mismos días inmediatamente anteriores).
  */
-function getInforme(token, desde, hasta, marca, antDesde, antHasta) {
+function getInforme(token, desde, hasta, marca, antDesde, antHasta, moneda) {
   const u = sesion_(token);
   exigirGestor_(u);
   desde = texto_(desde, 10);
   hasta = texto_(hasta, 10);
   marca = texto_(marca, 100);
+  moneda = MONEDAS.indexOf(moneda) >= 0 ? moneda : (config_().moneda_informe || 'PEN');
+  const tot = l => totales_(l, moneda);
   if (!esFecha_(desde) || !esFecha_(hasta) || desde > hasta) throw new Error('Rango de fechas no válido.');
   if (desde > hoy_()) throw new Error('El periodo todavía no empieza.');
 
@@ -248,8 +302,8 @@ function getInforme(token, desde, hasta, marca, antDesde, antHasta) {
   const enRango = (r, a, b) => r.fecha >= a && r.fecha <= b;
   const actual = pauta.filter(r => enRango(r, desde, hasta));
   const anterior = pauta.filter(r => enRango(r, antDesde, antHasta));
-  const tA = totales_(actual);
-  const tB = totales_(anterior);
+  const tA = tot(actual);
+  const tB = tot(anterior);
 
   // Serie del periodo (rellena los huecos).
   const serie = [];
@@ -257,7 +311,7 @@ function getInforme(token, desde, hasta, marca, antDesde, antHasta) {
   actual.forEach(r => { (grupos[clavePeriodo_(r.fecha, gran)] = grupos[clavePeriodo_(r.fecha, gran)] || []).push(r); });
   for (let f = desde; f <= hasta; f = sumarDias_(f, 1)) {
     const k = clavePeriodo_(f, gran);
-    if (!serie.length || serie[serie.length - 1].k !== k) serie.push({ k: k, t: totales_(grupos[k] || []) });
+    if (!serie.length || serie[serie.length - 1].k !== k) serie.push({ k: k, t: tot(grupos[k] || []) });
   }
 
   // Histórico: 12 meses hasta el mes de «hasta».
@@ -266,19 +320,19 @@ function getInforme(token, desde, hasta, marca, antDesde, antHasta) {
   for (let i = 0; i < 12; i++) { historico.unshift(mes); mes = mesAnterior_(mes); }
   const porMes = {};
   pauta.forEach(r => { (porMes[r.fecha.slice(0, 7)] = porMes[r.fecha.slice(0, 7)] || []).push(r); });
-  const hist = historico.map(m => ({ k: m, t: totales_(porMes[m] || []) }));
+  const hist = historico.map(m => ({ k: m, t: tot(porMes[m] || []) }));
   const previos = hist.filter(h => h.k < desde.slice(0, 7) && h.t.resultados > 0).slice(-6);
   const cprHistorico = previos.length ? Math.round(previos.reduce((s, h) => s + h.t.inversion, 0) / previos.reduce((s, h) => s + h.t.resultados, 0) * 100) / 100 : null;
 
   const marcas = lista_('marcas');
   const porMarca = marcas.concat(Object.keys(actual.reduce((o, r) => { if (marcas.indexOf(r.marca) < 0) o[r.marca] = 1; return o; }, {})))
     .filter(m => !marca || m === marca)
-    .map(m => ({ marca: m, actual: totales_(actual.filter(r => r.marca === m)), anterior: totales_(anterior.filter(r => r.marca === m)) }))
+    .map(m => ({ marca: m, actual: tot(actual.filter(r => r.marca === m)), anterior: tot(anterior.filter(r => r.marca === m)) }))
     .filter(x => x.actual.inversion || x.anterior.inversion);
 
   const camp = {};
   actual.forEach(r => { const k = r.marca + '|' + r.campana; (camp[k] = camp[k] || []).push(r); });
-  const campanas = Object.keys(camp).map(k => Object.assign({ marca: k.split('|')[0], campana: k.split('|').slice(1).join('|') }, totales_(camp[k])))
+  const campanas = Object.keys(camp).map(k => Object.assign({ marca: k.split('|')[0], campana: k.split('|').slice(1).join('|') }, tot(camp[k])))
     .sort((a, b) => b.inversion - a.inversion);
 
   const redes = informeRedes_(desde, hasta, marca);
@@ -295,6 +349,9 @@ function getInforme(token, desde, hasta, marca, antDesde, antHasta) {
       impresiones: variacion_(tA.impresiones, tB.impresiones), cpm: variacion_(tA.cpm, tB.cpm)
     },
     cprHistorico: cprHistorico,
+    moneda: moneda, simbolo: SIMBOLO[moneda], tipoCambio: tipoCambio_(hasta.slice(0, 7)),
+    // Moneda original de cada marca (para avisar qué se convirtió).
+    monedasOriginales: Array.from(new Set(actual.concat(anterior).map(r => r.marca + ':' + (r.moneda || 'PEN')))).sort(),
     serie: serie, historico: hist, porMarca: porMarca, campanas: campanas.slice(0, 15),
     redes: redes, contenido: contenido, operacion: operacion,
     hayPauta: pauta.length > 0
@@ -388,7 +445,7 @@ function informeOperacion_(desde, hasta, marca) {
 
 /** Lecturas automáticas en lenguaje simple para el informe. */
 function interpretar_(inf, campanas) {
-  const mon = (config_().moneda || 'S/') + ' ';
+  const mon = inf.simbolo + ' ';
   const n = v => Number(v).toLocaleString('es-PE', { maximumFractionDigits: 2 });
   const pct = v => (v > 0 ? '+' : '') + n(v) + '%';
   const t = inf.totales;
