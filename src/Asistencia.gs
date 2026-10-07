@@ -91,8 +91,9 @@ function marcarAsistencia(token, d) {
         tipo_dia: '', horas: '', extra: '', actualizado: ahora_(), nota: gestor && persona.id !== u.id ? 'Registrado por ' + u.nombre : '' });
     }
     log_(u.id, 'marcar_asistencia', persona.id, fecha + ' ' + entrada + '–' + salida);
-    return true;
   });
+  // Se devuelve la semana actualizada para no tener que volver a pedirla.
+  return getMiSemana(token, lunesDe_(fecha), persona.id === u.id ? '' : persona.id);
 }
 
 /**

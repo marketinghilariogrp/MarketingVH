@@ -24,7 +24,7 @@
       if (esGestor()) partes.push(datosEquipoAsistencia());
       const [semana, equipo] = await Promise.all(partes);
       if (S.vista !== 'asistencia') return;
-      $('#vista').innerHTML = htmlSemana(semana) + (equipo ? htmlEquipoAsistencia(equipo) : '');
+      $('#vista').innerHTML = `<div id="bloqueSemana">${htmlSemana(semana)}</div><div id="bloqueEquipo">${equipo ? htmlEquipoAsistencia(equipo) : ''}</div>`;
       enlazarSemana(semana);
       if (equipo) enlazarEquipoAsistencia(equipo);
     }
@@ -85,11 +85,17 @@
         const entrada = $('[data-k=entrada]', fila).value;
         const salida = $('[data-k=salida]', fila).value;
         if (!entrada && salida) return aviso('Primero marca la hora de ingreso.', 'error');
+        // Respuesta inmediata en pantalla mientras se guarda.
+        const horas = $('.dia-horas', fila);
+        horas.textContent = 'Guardando…';
         try {
-          await api('marcarAsistencia', { fecha: fila.dataset.fecha, entrada, salida, usuario_id: S.personaAsis || '' });
+          const semana = await api('marcarAsistencia', { fecha: fila.dataset.fecha, entrada, salida, usuario_id: S.personaAsis || '' });
+          if (S.vista !== 'asistencia') return;
+          $('#bloqueSemana').innerHTML = htmlSemana(semana);
+          enlazarSemana(semana);
           aviso('Guardado');
-          repintar();
-        } catch (e) { aviso(e.message, 'error'); }
+          if (esGestor()) refrescarEquipoAsistencia();
+        } catch (e) { horas.textContent = '—'; aviso(e.message, 'error'); }
       };
     });
   }
@@ -145,6 +151,16 @@
         <div class="tabla-caja plana"><table><thead><tr><th>Fecha</th><th>Persona</th><th>Tipo</th><th class="num">Horas</th><th>Detalle</th></tr></thead>
         <tbody>${d.compensaciones.map(c => `<tr><td>${fmtFecha(c.fecha)}</td><td>${esc(c.persona)}</td><td>${esc(c.tipo)}</td>
           <td class="num">${fmtNum(c.horas, 2)}</td><td class="ancho">${esc(c.motivo)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}`;
+  }
+
+  /** Actualiza la tabla del equipo en segundo plano, sin bloquear la pantalla. */
+  async function refrescarEquipoAsistencia() {
+    try {
+      const equipo = await datosEquipoAsistencia();
+      if (S.vista !== 'asistencia' || !$('#bloqueEquipo')) return;
+      $('#bloqueEquipo').innerHTML = htmlEquipoAsistencia(equipo);
+      enlazarEquipoAsistencia(equipo);
+    } catch (e) { /* se verá actualizada la próxima vez que se abra */ }
   }
 
   function enlazarEquipoAsistencia(d) {

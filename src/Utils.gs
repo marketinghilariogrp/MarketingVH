@@ -40,27 +40,47 @@ const ESQUEMA = {
   Log: ['fecha_hora', 'usuario', 'accion', 'id_afectado', 'detalle']
 };
 
+/*
+ * Memoria por ejecución: abrir el archivo de datos y leer una pestaña es lo más lento de Apps Script,
+ * así que dentro de una misma llamada se hace una sola vez. Escribir en una pestaña invalida su lectura,
+ * y conLock_ la vacía al empezar para leer datos frescos dentro del bloqueo.
+ */
+let memoArchivo_ = null;
+const memoHojas_ = {};
+let memoTablas_ = {};
+
 function db_() {
+  if (memoArchivo_) return memoArchivo_;
   const id = PropertiesService.getScriptProperties().getProperty('DB_ID');
   if (!id) throw new Error('El sistema no está configurado. Ejecuta setup() en el editor.');
-  return SpreadsheetApp.openById(id);
+  memoArchivo_ = SpreadsheetApp.openById(id);
+  return memoArchivo_;
 }
 
 function hoja_(nombre) {
+  if (memoHojas_[nombre]) return memoHojas_[nombre];
   const sh = db_().getSheetByName(nombre);
   if (!sh) throw new Error('Falta la hoja ' + nombre + '. Ejecuta setup() en el editor.');
+  memoHojas_[nombre] = sh;
   return sh;
 }
 
-/** Lee una hoja completa con un solo getValues() y la devuelve como objetos. */
+/** Lee una hoja completa con un solo getValues() y la devuelve como objetos (copias: se pueden modificar). */
 function leerTabla_(nombre) {
-  const valores = hoja_(nombre).getDataRange().getValues();
-  const cab = valores.shift() || [];
-  return valores.map((fila, i) => {
-    const o = { _fila: i + 2 };
-    cab.forEach((c, j) => { o[c] = String(fila[j]); });
-    return o;
-  });
+  if (!memoTablas_[nombre]) {
+    const valores = hoja_(nombre).getDataRange().getValues();
+    const cab = valores.shift() || [];
+    memoTablas_[nombre] = valores.map((fila, i) => {
+      const o = { _fila: i + 2 };
+      cab.forEach((c, j) => { o[c] = String(fila[j]); });
+      return o;
+    });
+  }
+  return memoTablas_[nombre].map(o => Object.assign({}, o));
+}
+
+function olvidarTabla_(nombre) {
+  delete memoTablas_[nombre];
 }
 
 function filaDesde_(nombre, obj) {
@@ -73,6 +93,7 @@ function agregarFila_(nombre, obj) {
   const fila = sh.getLastRow() + 1;
   if (fila > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), 100);
   sh.getRange(fila, 1, 1, ESQUEMA[nombre].length).setNumberFormat('@').setValues([filaDesde_(nombre, obj)]);
+  olvidarTabla_(nombre);
   obj._fila = fila;
   return obj;
 }
@@ -80,6 +101,7 @@ function agregarFila_(nombre, obj) {
 /** Agrega muchas filas en una sola escritura. Llamar dentro de conLock_. */
 function agregarFilas_(nombre, objs) {
   if (!objs.length) return;
+  olvidarTabla_(nombre);
   const sh = hoja_(nombre);
   const desde = sh.getLastRow() + 1;
   const faltan = desde + objs.length - 1 - sh.getMaxRows();
@@ -94,6 +116,7 @@ function agregarFilas_(nombre, objs) {
  * desde parrillas y fuentes de pauta). Llamar dentro de conLock_.
  */
 function reescribirTabla_(nombre, objs) {
+  olvidarTabla_(nombre);
   const sh = hoja_(nombre);
   const n = ESQUEMA[nombre].length;
   if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, n).clearContent();
@@ -105,6 +128,7 @@ function reescribirTabla_(nombre, objs) {
 
 /** Sobrescribe la fila de un objeto leído con leerTabla_. Las filas nunca se borran. */
 function escribirFila_(nombre, obj) {
+  olvidarTabla_(nombre);
   hoja_(nombre).getRange(obj._fila, 1, 1, ESQUEMA[nombre].length)
     .setNumberFormat('@').setValues([filaDesde_(nombre, obj)]);
 }
@@ -149,6 +173,7 @@ function mapaNombres_() {
 function conLock_(fn) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) throw new Error('El sistema está ocupado, intenta de nuevo en unos segundos.');
+  memoTablas_ = {}; // dentro del bloqueo se leen datos frescos
   try {
     return fn();
   } finally {
