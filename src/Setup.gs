@@ -9,25 +9,38 @@ const CONFIG_INICIAL = [
   ['peso_media', '2', 'Peso de producción de una tarea de prioridad media'],
   ['peso_baja', '1', 'Peso de producción de una tarea de prioridad baja'],
   ['jornada_horas', '8', 'Horas de jornada por defecto'],
-  ['dias_laborables', '1,2,3,4,5', 'Días laborables para calcular capacidad (1 = lunes … 7 = domingo)'],
+  ['horario_laboral', '1-5 09:00-18:30; 6 09:00-13:00',
+    'Horario por día (1 = lunes … 7 = domingo). Lo trabajado fuera de este horario cuenta como sobretiempo'],
   ['coordinador_puede_aprobar', 'SI', 'SI o NO: la coordinación puede aprobar tareas'],
-  ['areas', 'Audiovisual,Diseño gráfico,Community Manager,Social Media Manager,Trafficker,Dirección',
+  ['areas', 'Audiovisual,Diseño gráfico,Social Media,Community Manager,Trafficker,Dirección',
     'Áreas del equipo, separadas por coma'],
-  ['marcas', 'Academia,Nexo,Vyc,Marca Personal,EDE', 'Empresas o marcas, separadas por coma'],
+  ['marcas', 'Nexo,Academia VH Business,Vyc,Pagape,Marca Personal,EDE', 'Empresas o marcas, separadas por coma'],
   ['funciones', 'Diseño,Audiovisual,Community Management,Pauta,Producción de eventos,Contenido,Otros',
     'Tipos de trabajo para tareas, solicitudes y registro de horas'],
   ['funciones_evento', 'Audiovisual,CM,Fotografía,Producción,Apoyo', 'Funciones del personal en un evento'],
   ['tipos_agenda', 'Publicación,Grabación,Entregable,Lanzamiento,Fecha importante,Reunión,Otro',
     'Tipos de elementos de la agenda de contenido'],
   ['max_tareas_abiertas', '8', 'Más tareas abiertas que esto por persona genera alerta de sobrecarga'],
-  ['feriados', '', 'Fechas yyyy-MM-dd separadas por coma'],
-  ['meta_cuentas', '615089831325651:CA-Huacachina del Norte;745987248309855:El despertar del emprendedor;' +
-    '4362857017376427:Marca Personal Vitmer;149663071348835:VH Business Academy 2025',
-    'Cuentas publicitarias de Meta: id:Nombre separadas por punto y coma'],
-  ['meta_api_version', 'v24.0', 'Versión de la API de Meta (Graph API)'],
-  ['moneda', 'S/', 'Símbolo de moneda de las cuentas publicitarias'],
-  ['umbral_variacion', '30', 'Variación (%) de pauta vs. promedio de 7 días que genera alerta']
+  ['feriados', '2026-10-08,2026-11-01,2026-12-08,2026-12-09,2026-12-25,2027-01-01,2027-03-25,2027-03-26,' +
+    '2027-05-01,2027-06-07,2027-06-29,2027-07-23,2027-07-28,2027-07-29,2027-08-06,2027-08-30,2027-10-08,' +
+    '2027-11-01,2027-12-08,2027-12-09,2027-12-25', 'Feriados (yyyy-MM-dd) separados por coma'],
+  ['moneda', 'S/', 'Símbolo de moneda de la pauta'],
+  ['umbral_variacion', '30', 'Variación (%) de pauta semana contra semana que genera alerta']
 ];
+
+// Equipo actual (octubre 2026). La migración 2 lo deja así y desactiva a quienes ya no están.
+const EQUIPO_ACTUAL = [
+  ['Rodrigo', 'colaborador', 'Audiovisual'],
+  ['Jefferson', 'coordinador', 'Audiovisual'],
+  ['Gabriela', 'coordinador', 'Social Media'],
+  ['Blue', 'colaborador', 'Diseño gráfico'],
+  ['Antony', 'colaborador', 'Audiovisual'],
+  ['Renzo', 'practicante', 'Audiovisual'],
+  ['Abigail', 'practicante', 'Audiovisual'],
+  ['Chris', 'colaborador', 'Diseño gráfico'],
+  ['Cesi', 'colaborador', 'Trafficker']
+];
+const YA_NO_ESTAN = ['fran', 'jorge', 'challs', 'henz'];
 
 function setup() {
   const props = PropertiesService.getScriptProperties();
@@ -37,6 +50,10 @@ function setup() {
     : SpreadsheetApp.create('MarketingVH · Datos');
   if (!yaExistia) props.setProperty('DB_ID', ss.getId());
   if (!props.getProperty('SALT')) props.setProperty('SALT', uuid_() + uuid_());
+
+  // Migración 2: Pauta_diaria cambió de estructura (antes venía de la API de Meta, ahora de Google Sheets).
+  const pautaVieja = ss.getSheetByName('Pauta_diaria');
+  if (pautaVieja && pautaVieja.getLastRow() > 0 && pautaVieja.getRange(1, 1).getValue() === 'fecha') ss.deleteSheet(pautaVieja);
 
   Object.keys(ESQUEMA).forEach(nombre => prepararHoja_(ss, nombre));
   if (!yaExistia) {
@@ -64,6 +81,11 @@ function setup() {
   });
   invalidar_('config');
   invalidar_('usuarios');
+  if (Number(props.getProperty('MIGRACION') || 0) < 2) {
+    migracion2_();
+    props.setProperty('MIGRACION', '2');
+    console.log('Migración 2 aplicada: equipo actual, marcas, horario, redes sociales.');
+  }
 
   console.log('Archivo de datos: ' + ss.getUrl());
   if (pinAdmin) {
@@ -72,6 +94,73 @@ function setup() {
   } else {
     console.log('Hojas y configuración actualizadas. El PIN del administrador no se cambió.');
   }
+}
+
+/**
+ * Octubre 2026: equipo actual, marcas nuevas, sin importación del Excel ni Meta Ads,
+ * y cuentas de redes sociales iniciales.
+ */
+function migracion2_() {
+  const norm = s => normal_(s).split(' ')[0];
+  conLock_(() => {
+    // Config: valores nuevos y claves que ya no se usan.
+    const cfg = leerTabla_('Config');
+    const fijar = { marcas: 'Nexo,Academia VH Business,Vyc,Pagape,Marca Personal,EDE',
+      areas: 'Audiovisual,Diseño gráfico,Social Media,Community Manager,Trafficker,Dirección' };
+    const quitar = ['meta_cuentas', 'meta_api_version', 'dias_laborables'];
+    const feriados = CONFIG_INICIAL.find(c => c[0] === 'feriados')[1];
+    reescribirTabla_('Config', cfg.filter(c => quitar.indexOf(c.clave) < 0).map(c => {
+      if (fijar[c.clave]) c.valor = fijar[c.clave];
+      if (c.clave === 'feriados' && !c.valor) c.valor = feriados;
+      return c;
+    }));
+
+    // «Academia» pasa a llamarse «Academia VH Business».
+    const renombrar = (tabla, campo) => {
+      const filas = leerTabla_(tabla);
+      if (filas.some(r => r[campo] === 'Academia')) {
+        reescribirTabla_(tabla, filas.map(r => { if (r[campo] === 'Academia') r[campo] = 'Academia VH Business'; return r; }));
+      }
+    };
+    [['Tareas', 'marca'], ['Solicitudes', 'marca'], ['Horas', 'marca'], ['Agenda', 'marca'], ['Parrillas', 'marca'], ['Eventos', 'empresa']]
+      .forEach(x => renombrar(x[0], x[1]));
+
+    // Se descarta la importación del Excel de rotación, si se llegó a ejecutar.
+    const eventos = leerTabla_('Eventos');
+    const importados = eventos.filter(e => e.creado_por === 'importacion').map(e => e.id);
+    if (importados.length) {
+      reescribirTabla_('Eventos', eventos.filter(e => importados.indexOf(e.id) < 0));
+      reescribirTabla_('Cobertura', leerTabla_('Cobertura').filter(c => importados.indexOf(c.evento_id) < 0));
+    }
+
+    // Equipo actual: se actualiza a quien ya existe (por primer nombre) y se crea a quien falta.
+    const usuarios = leerTabla_('Usuarios');
+    const nuevos = [];
+    EQUIPO_ACTUAL.forEach(([nombre, rol, area]) => {
+      const u = usuarios.find(x => norm(x.nombre) === norm(nombre) || (norm(nombre) === 'antony' && norm(x.nombre) === 'anthony'));
+      if (u) {
+        Object.assign(u, { nombre: u.nombre === 'Anthony' ? 'Antony' : u.nombre, rol: rol, area: area, activo: 'SI' });
+        escribirFila_('Usuarios', u);
+      } else {
+        nuevos.push({ id: uuid_(), nombre: nombre, correo: '', rol: rol, area: area, pin_hash: '',
+          jornada_horas: '8', activo: 'SI', creado: ahora_() });
+      }
+    });
+    usuarios.filter(x => YA_NO_ESTAN.indexOf(norm(x.nombre)) >= 0 && x.activo === 'SI').forEach(x => {
+      x.activo = 'NO';
+      escribirFila_('Usuarios', x);
+    });
+    agregarFilas_('Usuarios', nuevos);
+
+    // Cuentas de redes sociales.
+    if (!leerTabla_('Redes_cuentas').length) {
+      agregarFilas_('Redes_cuentas', CUENTAS_REDES_INICIALES.map(c => ({ id: uuid_(), marca: c[0], red: c[1], usuario: c[2], url: c[3], activo: 'SI' })));
+    }
+    log_('sistema', 'migracion', '2', 'Equipo actual, marcas, redes; ' + importados.length + ' eventos importados descartados');
+  });
+  invalidar_('config');
+  invalidar_('usuarios');
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'pautaDiaria').forEach(t => ScriptApp.deleteTrigger(t));
 }
 
 /** Crea la hoja si falta, o agrega al final las columnas nuevas del ESQUEMA. */
@@ -105,19 +194,19 @@ function prepararHoja_(ss, nombre) {
 
 /**
  * Programa las tareas automáticas (ejecutar una vez desde el editor):
- * - pautaDiaria: todos los días entre 6:00 y 6:15 p. m. (corte de Meta Ads + correo)
+ * - sincronizarFuentes: cada hora relee los Google Sheets de pauta y las parrillas
  * - alertasDiarias: todos los días a las 8 a. m. (correo con alertas del equipo)
  * - copiaSemanal: los domingos, copia de seguridad del archivo de datos en Drive
  */
 function instalarAutomatizaciones() {
-  const funciones = ['pautaDiaria', 'alertasDiarias', 'copiaSemanal'];
+  const funciones = ['pautaDiaria', 'sincronizarFuentes', 'alertasDiarias', 'copiaSemanal'];
   ScriptApp.getProjectTriggers()
     .filter(t => funciones.indexOf(t.getHandlerFunction()) >= 0)
     .forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('pautaDiaria').timeBased().everyDays(1).atHour(18).nearMinute(0).create();
+  ScriptApp.newTrigger('sincronizarFuentes').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('alertasDiarias').timeBased().everyDays(1).atHour(8).create();
   ScriptApp.newTrigger('copiaSemanal').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(23).create();
-  console.log('Automatizaciones instaladas: ' + funciones.join(', '));
+  console.log('Automatizaciones instaladas: sincronizarFuentes (cada hora), alertasDiarias (8 a. m.), copiaSemanal (domingos).');
 }
 
 function copiaSemanal() {

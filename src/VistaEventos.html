@@ -54,7 +54,27 @@
             ${barras(conteo.map(x => ({ k: x.nombre, v: x.eventos, extra: x.indice !== null ? '×' + x.indice : '', clase: indiceClase(x.indice) })),
               { vacio: 'Sin eventos cubiertos.' })}
           </section>
-        </div>`;
+        </div>
+        <section class="card sin-pad">
+          <div class="cab-card pad"><h3>Historial ${mes.slice(0, 4)} · eventos cubiertos por persona y mes</h3></div>
+          <p class="sub pad-x">Haz clic en un número para ver qué eventos cubrió esa persona ese mes.</p>
+          <div class="tabla-caja plana"><table class="matriz">
+            <thead><tr><th>Persona</th>${MESES.map((x, i) => `<th class="num${i + 1 === Number(mes.slice(5)) ? ' mes-actual' : ''}">${x.slice(0, 3)}</th>`).join('')}<th class="num">Total</th></tr></thead>
+            <tbody>${d.historial.map(h => `<tr><td><b>${esc(h.nombre)}</b></td>
+              ${h.meses.map((n, i) => `<td class="num${i + 1 === Number(mes.slice(5)) ? ' mes-actual' : ''}">${n ? `<button class="celda-n" data-hist="${esc(h.usuario_id)}" data-m="${i + 1}">${n}</button>` : '<span class="sub">·</span>'}</td>`).join('')}
+              <td class="num"><b>${h.meses.reduce((a, b) => a + b, 0)}</b></td></tr>`).join('')}</tbody>
+          </table></div>
+        </section>`;
+      $('.matriz').onclick = e => {
+        const b = e.target.closest('[data-hist]');
+        if (!b) return;
+        const h = d.historial.find(x => x.usuario_id === b.dataset.hist);
+        const mm = String(b.dataset.m).padStart(2, '0');
+        const lista = h.eventos.filter(x => x.fecha.slice(5, 7) === mm);
+        modal(`${h.nombre} · ${MESES[Number(mm) - 1]} ${mes.slice(0, 4)}`, `<ul class="lista">${lista.map(x => `<li>
+          <span class="fecha-chip">${diaSemana(x.fecha)}<b>${x.fecha.slice(8)}</b></span>
+          <div><b>${esc(x.titulo)}</b> <span class="etiqueta">${esc(x.empresa)}</span><small>${esc(x.funcion)}</small></div></li>`).join('')}</ul>`, null);
+      };
       enlazarNavMes($('#vista'), mes, m => { S.mesEventos = m; repintar(); });
       $$('[data-rot]').forEach(b => { b.onclick = () => { S.rotacionAnio = !!b.dataset.rot; repintar(); }; });
       if (esGestor()) {
@@ -254,8 +274,9 @@
         <small>${[e.empresa, e.hora_inicio && (e.hora_inicio + (e.hora_fin ? '–' + e.hora_fin : '')), e.lugar, ESTADO_EV[e.estado]].filter(Boolean).map(esc).join(' · ')}</small>
         <div class="personal">${chipsPersonal(e)}</div></div>`).join('')}
       ${agenda.map(a => `<div class="item-dia ${claseAgenda(a.tipo)}">
-        <div class="cab-card"><b>${esc(a.tipo)}: ${esc(a.titulo)}</b><span class="estado e-${esc(a.estado)}">${esc(a.estado)}</span></div>
-        <small>${[a.hora, a.marca, a.campana, a.responsable].filter(Boolean).map(esc).join(' · ')}</small>
+        <div class="cab-card"><b>${esc(a.tipo)}: ${esc(a.titulo)}</b><span class="estado e-${esc(a.estado)}">${a.parrilla && a.estado === 'hecho' ? 'publicado' : esc(a.estado)}</span></div>
+        <small>${[a.hora, a.marca, a.red, a.formato, a.pilar, a.campana, a.responsable].filter(Boolean).map(esc).join(' · ')}</small>
+        ${a.parrilla ? '<small>Viene de la parrilla de la marca: se edita en su Google Sheet.</small>' : ''}
         ${a.detalle ? `<small>${esc(a.detalle)}</small>` : ''}
         <div class="acciones">${a.marcable && a.estado === 'pendiente' ? `<button type="button" class="btn mini ok" data-hecho="${esc(a.id)}">Marcar hecho</button>` : ''}
           ${a.editable ? `<button type="button" class="btn mini" data-ag="${esc(a.id)}">Editar</button>` : ''}</div></div>`).join('')}

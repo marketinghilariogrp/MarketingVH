@@ -35,7 +35,7 @@ function conteoEventos_(eventos) {
   eventos.filter(e => e.estado !== 'cancelado').forEach(e => {
     e.personal.filter(p => p.estado !== 'ausente').forEach(p => { cuenta[p.usuario_id] = (cuenta[p.usuario_id] || 0) + 1; });
   });
-  const personas = usuarios_().filter(x => cuenta[x.id] || (x.activo === 'SI' && x.rol === 'colaborador'));
+  const personas = usuarios_().filter(x => cuenta[x.id] || (x.activo === 'SI' && x.rol !== 'admin'));
   const total = personas.reduce((s, x) => s + (cuenta[x.id] || 0), 0);
   const promedio = personas.length ? total / personas.length : 0;
   return personas.map(x => {
@@ -51,7 +51,22 @@ function listarEventos(token, mes) {
   const anio = mes.slice(0, 4);
   const delAnio = eventosConPersonal_(e => e.fecha.slice(0, 4) === anio);
   const delMes = delAnio.filter(e => e.fecha.slice(0, 7) === mes);
-  return { mes: mes, eventos: delMes, conteoMes: conteoEventos_(delMes), conteoAnio: conteoEventos_(delAnio) };
+
+  // Historial del año: eventos cubiertos por persona en cada mes, con el detalle de qué evento y marca.
+  const historial = {};
+  delAnio.filter(e => e.estado !== 'cancelado').forEach(e => e.personal.filter(p => p.estado !== 'ausente').forEach(p => {
+    const h = historial[p.usuario_id] = historial[p.usuario_id] || { usuario_id: p.usuario_id, nombre: p.nombre, meses: Array(12).fill(0), eventos: [] };
+    h.meses[Number(e.fecha.slice(5, 7)) - 1]++;
+    h.eventos.push({ fecha: e.fecha, titulo: e.titulo, empresa: e.empresa, funcion: p.funcion });
+  }));
+  usuarios_().filter(x => x.activo === 'SI' && x.rol !== 'admin' && !historial[x.id]).forEach(x => {
+    historial[x.id] = { usuario_id: x.id, nombre: x.nombre, meses: Array(12).fill(0), eventos: [] };
+  });
+
+  return {
+    mes: mes, eventos: delMes, conteoMes: conteoEventos_(delMes), conteoAnio: conteoEventos_(delAnio),
+    historial: Object.keys(historial).map(k => historial[k]).sort((a, b) => a.nombre.localeCompare(b.nombre))
+  };
 }
 
 /** Crea o edita un evento y reemplaza su lista de personal. */

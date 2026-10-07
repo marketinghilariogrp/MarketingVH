@@ -73,18 +73,6 @@ function horaCliente_(r, u, nombres) {
   };
 }
 
-/** Días laborables (según Config.dias_laborables, 1 = lunes … 7 = domingo) entre dos fechas, sin feriados. */
-function diasLaborables_(desde, hasta) {
-  const dias = lista_('dias_laborables').map(Number);
-  const feriados = lista_('feriados');
-  let n = 0;
-  for (let f = desde; f <= hasta; f = sumarDias_(f, 1)) {
-    const dow = new Date(f + 'T12:00:00').getDay() || 7;
-    if (dias.indexOf(dow) >= 0 && feriados.indexOf(f) < 0) n++;
-  }
-  return n;
-}
-
 /** Registros y resumen de horas del rango. Un colaborador solo ve los suyos. */
 function listarHoras(token, desde, hasta, usuarioId) {
   const u = sesion_(token);
@@ -105,11 +93,11 @@ function listarHoras(token, desde, hasta, usuarioId) {
     porPersona[r.usuario_id] = (porPersona[r.usuario_id] || 0) + h;
   });
 
-  const habiles = diasLaborables_(desde, hasta > hoy_() ? hoy_() : hasta);
+  // Capacidad = horas del horario laboral (Config.horario_laboral) hasta hoy, sin feriados.
+  const capacidad = horasLaborables_(desde, hasta > hoy_() ? hoy_() : hasta);
   const personas = usuarios_()
     .filter(x => x.activo === 'SI' && (!usuarioId || x.id === usuarioId) && (porPersona[x.id] || x.rol !== 'admin'))
     .map(x => {
-      const capacidad = (Number(x.jornada_horas) || 0) * habiles;
       const horas = Math.round((porPersona[x.id] || 0) * 100) / 100;
       return { usuario_id: x.id, nombre: x.nombre, rol: x.rol, area: x.area, horas: horas,
         capacidad: capacidad, uso: capacidad ? Math.round(horas / capacidad * 100) : null };
@@ -122,6 +110,6 @@ function listarHoras(token, desde, hasta, usuarioId) {
     porFuncion: Object.keys(porFuncion).map(k => ({ k: k, v: Math.round(porFuncion[k] * 100) / 100 }))
       .sort((a, b) => b.v - a.v),
     personas: personas,
-    diasHabiles: habiles
+    horasLaborables: capacidad
   };
 }

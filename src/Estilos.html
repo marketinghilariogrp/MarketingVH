@@ -301,6 +301,30 @@
   .mini-tendencia { display: flex; align-items: flex-end; gap: 3px; height: 36px; }
   .mini-tendencia i { width: 8px; background: var(--marca); border-radius: 2px 2px 0 0; opacity: .8; }
 
+  /* Informes */
+  .sube { color: var(--ok); }
+  .baja { color: var(--peligro); }
+  .kpi small.sube, .kpi small.baja { font-weight: 600; }
+  .cab-informe { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 4px 2px; }
+  .cab-informe strong { font-size: 17px; }
+  .seccion { font-size: 16px; margin: 8px 0 -4px; padding-top: 8px; border-top: 1px solid var(--borde); }
+  .lecturas { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .lecturas li { display: flex; gap: 10px; align-items: baseline; line-height: 1.5; }
+  .lecturas li span { flex-shrink: 0; width: 16px; text-align: center; font-size: 12px; }
+  .lecturas li.sube span, .lecturas li.baja span { font-weight: 700; }
+  .lecturas li.sube, .lecturas li.baja { color: var(--texto); }
+  .lecturas li.sube span { color: var(--ok); }
+  .lecturas li.baja span { color: var(--peligro); }
+  .lienzo { position: relative; height: 240px; margin-top: 8px; }
+  .lienzo.alto { height: 300px; }
+  .num-input { width: 110px; text-align: right; padding: 6px 8px; }
+  td.num small { display: block; font-size: 11px; }
+  .pad-x { padding: 0 18px; }
+  .matriz th, .matriz td { padding: 7px 8px; }
+  .matriz .mes-actual { background: var(--marca-suave); }
+  .celda-n { border: 0; background: var(--columna); border-radius: 6px; min-width: 28px; padding: 2px 6px; font-weight: 700; cursor: pointer; }
+  .celda-n:hover { background: var(--marca); color: #fff; }
+
   /* Modal */
   .fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: grid; place-items: center; padding: 16px; z-index: 40; }
   .modal { background: var(--panel); border-radius: 14px; padding: 20px 22px; width: min(540px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; display: grid; gap: 12px; }
@@ -310,6 +334,18 @@
   .pin { font-size: 32px; font-weight: 800; letter-spacing: 6px; text-align: center; margin: 6px 0; font-variant-numeric: tabular-nums; }
   .panel { max-width: 440px; display: grid; gap: 12px; }
   .panel p { margin: 0; }
+
+  @media print {
+    :root { --fondo: #ffffff; --panel: #ffffff; --texto: #111111; --suave: #555555; --borde: #dddddd; --columna: #f1f1f1; }
+    body { background: #fff; }
+    .lateral, .velo, .top, .no-print, #avisos, #carga { display: none !important; }
+    .layout { display: block; }
+    main#vista { padding: 0; max-width: none; }
+    .card, .kpi, .tabla-caja { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+    .seccion { break-after: avoid; }
+    .rejilla { grid-template-columns: 1fr 1fr; }
+    .kpis { grid-template-columns: repeat(3, 1fr); }
+  }
 
   @media (max-width: 1100px) {
     .rejilla-ev, .rejilla-horas { grid-template-columns: 1fr; }

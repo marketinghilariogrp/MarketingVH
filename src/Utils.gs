@@ -14,16 +14,23 @@ const ESQUEMA = {
   Horas: ['id', 'usuario_id', 'fecha', 'inicio', 'fin', 'horas', 'funcion', 'marca', 'tarea_id',
     'descripcion', 'creado', 'estado'],
   Asistencia: ['id', 'usuario_id', 'fecha', 'entrada', 'salida', 'tipo_dia', 'horas', 'extra'],
-  Ajustes_saldo: ['id', 'usuario_id', 'fecha', 'motivo', 'tipo', 'cantidad'],
+  Sobretiempo: ['id', 'usuario_id', 'fecha', 'inicio', 'fin', 'horas', 'motivo', 'evento_id', 'estado',
+    'revisado_por', 'nota', 'creado'],
+  // Compensaciones de sobretiempo (días u horas libres, pago) registradas por el admin / RR. HH.
+  Ajustes_saldo: ['id', 'usuario_id', 'fecha', 'motivo', 'tipo', 'cantidad', 'registrado_por', 'creado'],
   Eventos: ['id', 'fecha', 'titulo', 'detalle', 'lugar', 'calendar_id', 'estado',
     'empresa', 'hora_inicio', 'hora_fin', 'creado_por', 'actualizada'],
   Cobertura: ['id', 'evento_id', 'usuario_id', 'rol_en_evento', 'estado', 'zona', 'horario', 'nota'],
   Agenda: ['id', 'fecha', 'hora', 'titulo', 'tipo', 'marca', 'campana', 'responsable_id', 'estado',
-    'detalle', 'origen', 'creado_por', 'actualizada'],
-  Parrillas: ['id', 'marca', 'nombre', 'url', 'activo', 'creado'],
-  Pauta_diaria: ['fecha', 'cuenta_id', 'cuenta', 'campana_id', 'campana', 'estado', 'objetivo',
-    'inversion', 'impresiones', 'alcance', 'clics', 'clics_enlace', 'ctr', 'cpc', 'cpm',
-    'leads', 'mensajes', 'actualizado'],
+    'detalle', 'origen', 'creado_por', 'actualizada', 'red', 'formato', 'pilar', 'enlace', 'estado_material'],
+  Parrillas: ['id', 'marca', 'nombre', 'url', 'activo', 'creado', 'sheet_id', 'ultima_sync', 'estado_sync'],
+  // Fuentes de pauta: Google Sheets del equipo que se leen y consolidan en Pauta_diaria.
+  Fuentes_pauta: ['id', 'marca', 'nombre', 'url', 'hoja', 'activo', 'creado', 'ultima_sync', 'estado_sync', 'filas'],
+  Pauta_diaria: ['fuente_id', 'marca', 'fecha', 'fecha_fin', 'campana', 'inversion', 'alcance', 'impresiones',
+    'clics', 'resultados', 'tipo_resultado', 'leads', 'mensajes'],
+  Redes_cuentas: ['id', 'marca', 'red', 'usuario', 'url', 'activo'],
+  Redes_metricas: ['id', 'cuenta_id', 'mes', 'seguidores', 'alcance', 'visualizaciones', 'interacciones',
+    'publicaciones', 'registrado_por', 'actualizado'],
   Resumen_mensual: ['mes', 'usuario_id', 'tareas_ok', 'a_tiempo', 'horas_extra', 'eventos', 'saldo'],
   Config: ['clave', 'valor', 'descripcion'],
   Log: ['fecha_hora', 'usuario', 'accion', 'id_afectado', 'detalle']
@@ -76,6 +83,20 @@ function agregarFilas_(nombre, objs) {
   sh.getRange(desde, 1, objs.length, ESQUEMA[nombre].length).setNumberFormat('@')
     .setValues(objs.map(o => filaDesde_(nombre, o)));
   objs.forEach((o, i) => { o._fila = desde + i; });
+}
+
+/**
+ * Reemplaza todo el contenido de una hoja (solo para datos derivados, como lo sincronizado
+ * desde parrillas y fuentes de pauta). Llamar dentro de conLock_.
+ */
+function reescribirTabla_(nombre, objs) {
+  const sh = hoja_(nombre);
+  const n = ESQUEMA[nombre].length;
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, n).clearContent();
+  if (sh.getMaxRows() < objs.length + 1) sh.insertRowsAfter(sh.getMaxRows(), objs.length + 1 - sh.getMaxRows() + 100);
+  if (objs.length) {
+    sh.getRange(2, 1, objs.length, n).setNumberFormat('@').setValues(objs.map(o => filaDesde_(nombre, o)));
+  }
 }
 
 /** Sobrescribe la fila de un objeto leído con leerTabla_. Las filas nunca se borran. */
@@ -162,6 +183,61 @@ function esHora_(s) {
 function minutos_(hhmm) {
   const p = hhmm.split(':');
   return Number(p[0]) * 60 + Number(p[1]);
+}
+
+/**
+ * Horario laboral de Config.horario_laboral («1-5 09:00-18:30; 6 09:00-13:00»).
+ * Devuelve { día(1=lunes…7=domingo): [inicioMin, finMin] }.
+ */
+function horario_() {
+  const h = {};
+  String(config_().horario_laboral || '').split(';').map(s => s.trim()).filter(String).forEach(tramo => {
+    const m = tramo.match(/^(\d)(?:-(\d))?\s+(\d{2}:\d{2})-(\d{2}:\d{2})$/);
+    if (!m) return;
+    for (let d = Number(m[1]); d <= Number(m[2] || m[1]); d++) h[d] = [minutos_(m[3]), minutos_(m[4])];
+  });
+  return h;
+}
+
+function diaSemana_(fecha) {
+  return new Date(fecha + 'T12:00:00').getDay() || 7;
+}
+
+/** Tramo laboral [ini, fin] en minutos de esa fecha, o null si es domingo, feriado o día libre. */
+function tramoLaboral_(fecha, horario) {
+  if (lista_('feriados').indexOf(fecha) >= 0) return null;
+  return (horario || horario_())[diaSemana_(fecha)] || null;
+}
+
+/** Horas laborables entre dos fechas según el horario y los feriados. */
+function horasLaborables_(desde, hasta) {
+  const h = horario_();
+  let total = 0;
+  for (let f = desde; f <= hasta; f = sumarDias_(f, 1)) {
+    const t = tramoLaboral_(f, h);
+    if (t) total += (t[1] - t[0]) / 60;
+  }
+  return Math.round(total * 10) / 10;
+}
+
+function num_(v) {
+  if (typeof v === 'number') return v;
+  const s = String(v == null ? '' : v).replace(/[^\d.,-]/g, '');
+  if (!s) return 0;
+  // «1.234,56» o «1,234.56» o «1234,56»
+  const coma = s.lastIndexOf(',');
+  const punto = s.lastIndexOf('.');
+  let limpio = s;
+  if (coma > punto) limpio = s.replace(/\./g, '').replace(',', '.');
+  else limpio = s.replace(/,/g, '');
+  const n = Number(limpio);
+  return isNaN(n) ? 0 : n;
+}
+
+/** Normaliza texto para comparar encabezados y nombres: minúsculas, sin tildes ni emojis. */
+function normal_(s) {
+  return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 function uuid_() {

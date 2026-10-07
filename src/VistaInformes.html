@@ -1,0 +1,273 @@
+<script>
+  /* ---------- Informes: pauta, redes, contenido y operación por periodo (para la gerencia) ---------- */
+
+  const PALETA = ['#e4572e', '#2563eb', '#0d9488', '#7c3aed', '#ca8a04', '#db2777', '#64748b', '#0891b2'];
+  const PERIODOS = [['semana', 'Semana'], ['mes', 'Mes'], ['trimestre', 'Trimestre'], ['anio', 'Año'], ['rango', 'Personalizado']];
+  let graficos = [];
+
+  /** Rango del periodo que contiene la fecha ancla, y el periodo equivalente anterior. */
+  function rangoPeriodo(tipo, ancla) {
+    const [y, m] = ancla.split('-').map(Number);
+    const fin = (a, mm) => sumarDias(sumarMes(`${a}-${String(mm).padStart(2, '0')}`, 1) + '-01', -1);
+    const pad = n => String(n).padStart(2, '0');
+    if (tipo === 'semana') {
+      const lunes = sumarDias(ancla, -((new Date(ancla + 'T12:00:00').getDay() + 6) % 7));
+      return { desde: lunes, hasta: sumarDias(lunes, 6), antDesde: sumarDias(lunes, -7), antHasta: sumarDias(lunes, -1),
+        texto: `Semana del ${fmtFecha(lunes)} al ${fmtFecha(sumarDias(lunes, 6))}` };
+    }
+    if (tipo === 'mes') {
+      const ant = sumarMes(`${y}-${pad(m)}`, -1);
+      return { desde: `${y}-${pad(m)}-01`, hasta: fin(y, m), antDesde: ant + '-01', antHasta: fin(Number(ant.slice(0, 4)), Number(ant.slice(5))),
+        texto: mesTexto(`${y}-${pad(m)}`) };
+    }
+    if (tipo === 'trimestre') {
+      const q = Math.floor((m - 1) / 3);
+      const ini = `${y}-${pad(q * 3 + 1)}`;
+      const ant = sumarMes(ini, -3);
+      return { desde: ini + '-01', hasta: fin(y, q * 3 + 3), antDesde: ant + '-01', antHasta: sumarDias(ini + '-01', -1),
+        texto: `${q + 1}.º trimestre ${y}` };
+    }
+    return { desde: `${y}-01-01`, hasta: `${y}-12-31`, antDesde: `${y - 1}-01-01`, antHasta: `${y - 1}-12-31`, texto: `Año ${y}` };
+  }
+
+  function moverAncla(tipo, ancla, n) {
+    if (tipo === 'semana') return sumarDias(ancla, 7 * n);
+    if (tipo === 'mes') return sumarMes(ancla.slice(0, 7), n) + '-01';
+    if (tipo === 'trimestre') return sumarMes(ancla.slice(0, 7), 3 * n) + '-01';
+    return `${Number(ancla.slice(0, 4)) + n}-01-01`;
+  }
+
+  /** Variación con flecha y color; si «menosEsMejor», bajar es bueno (costos). */
+  function delta(v, menosEsMejor) {
+    if (v === null || v === undefined) return '<small class="sub">sin comparación</small>';
+    const bueno = menosEsMejor ? v < 0 : v > 0;
+    return `<small class="${v === 0 ? 'sub' : bueno ? 'sube' : 'baja'}">${v > 0 ? '▲' : v < 0 ? '▼' : '●'} ${fmtNum(Math.abs(v), 1)}% vs. periodo anterior</small>`;
+  }
+
+  function etiquetaSerie(k, gran) {
+    if (gran === 'mes') return MESES[Number(k.slice(5, 7)) - 1].slice(0, 3) + ' ' + k.slice(2, 4);
+    if (gran === 'semana') return 'Sem ' + fmtFecha(k).slice(0, 5);
+    return fmtFecha(k).slice(0, 5);
+  }
+
+  function grafico(id, config) {
+    const el = document.getElementById(id);
+    if (!el || typeof Chart === 'undefined') return;
+    const css = getComputedStyle(document.body);
+    Chart.defaults.color = css.getPropertyValue('--suave').trim() || '#6b7280';
+    Chart.defaults.borderColor = css.getPropertyValue('--borde').trim() || '#e3e6eb';
+    Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    config.options = Object.assign({ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }, config.options || {});
+    graficos.push(new Chart(el, config));
+  }
+
+  VISTAS.informes = {
+    titulo: 'Informes de marketing',
+    async pintar() {
+      graficos.forEach(g => g.destroy());
+      graficos = [];
+      const tipo = S.periodoInf || 'mes';
+      const ancla = S.anclaInf || S.hoy;
+      const marca = S.marcaInf || '';
+      let r;
+      if (tipo === 'rango') {
+        const desde = S.desdeInf || S.hoy.slice(0, 8) + '01';
+        const hasta = S.hastaInf || S.hoy;
+        r = { desde, hasta, texto: `Del ${fmtFecha(desde)} al ${fmtFecha(hasta)}` };
+      } else r = rangoPeriodo(tipo, ancla);
+      const d = await api('getInforme', r.desde, r.hasta, marca, r.antDesde || '', r.antHasta || '');
+      if (S.vista !== 'informes') return;
+      const t = d.totales;
+      const v = d.variaciones;
+      const m = S.cfg.moneda + ' ';
+      const tono = { bueno: 'sube', malo: 'baja', neutro: '' };
+      const icon = { bueno: '▲', malo: '▼', neutro: '●' };
+
+      $('#vista').innerHTML = `
+        <div class="toolbar no-print">
+          <div class="pestanas">${PERIODOS.map(([k, x]) => `<button class="pestana ${tipo === k ? 'activo' : ''}" data-tipo="${k}">${x}</button>`).join('')}</div>
+          <div class="controles">
+            ${tipo === 'rango' ? `<input type="date" id="fDesdeI" value="${r.desde}"><input type="date" id="fHastaI" value="${r.hasta}">`
+              : `<button class="btn-ico" data-mov="-1" aria-label="Anterior">‹</button><strong>${esc(r.texto)}</strong><button class="btn-ico" data-mov="1" aria-label="Siguiente">›</button>`}
+            <select id="fMarcaI" aria-label="Marca">${opciones(S.cfg.marcas, marca, 'Todas las marcas')}</select>
+            <button class="btn" id="bFuentes">Fuentes de datos</button>
+            <button class="btn primario" id="bImprimir">Imprimir / PDF</button>
+          </div>
+        </div>
+        <div id="panelFuentes"></div>
+
+        <header class="cab-informe">
+          <div class="marca"><span class="logo">VH</span><div><strong>Informe de marketing · ${esc(r.texto)}</strong>
+            <small>${esc(marca || 'Todas las marcas')} · ${fmtFecha(d.desde)} al ${fmtFecha(d.hasta)} · comparado con ${fmtFecha(d.anterior.desde)} al ${fmtFecha(d.anterior.hasta)}</small></div></div>
+          <small class="sub">Generado el ${fmtFecha(S.hoy)}</small>
+        </header>
+
+        <section class="card">
+          <h3>Resumen ejecutivo</h3>
+          <ul class="lecturas">${d.interpretaciones.map(i => `<li class="${tono[i.tono]}"><span>${icon[i.tono]}</span>${esc(i.texto)}</li>`).join('')}</ul>
+        </section>
+
+        <h2 class="seccion">Pauta publicitaria</h2>
+        <div class="kpis">
+          <div class="kpi"><span class="kpi-v">${m}${fmtNum(t.inversion, 2)}</span><span class="kpi-k">Inversión</span>${delta(v.inversion)}</div>
+          <div class="kpi"><span class="kpi-v">${fmtNum(t.resultados)}</span><span class="kpi-k">Resultados</span>${delta(v.resultados)}</div>
+          <div class="kpi"><span class="kpi-v">${t.cpr === null ? '—' : m + fmtNum(t.cpr, 2)}</span><span class="kpi-k">Costo por resultado</span>${delta(v.cpr, true)}</div>
+          <div class="kpi"><span class="kpi-v">${fmtNum(t.alcance)}</span><span class="kpi-k">Alcance (suma diaria)</span>${delta(v.alcance)}</div>
+          <div class="kpi"><span class="kpi-v">${fmtNum(t.impresiones)}</span><span class="kpi-k">Impresiones</span>${delta(v.impresiones)}</div>
+          <div class="kpi"><span class="kpi-v">${t.ctr === null ? '—' : fmtNum(t.ctr, 2) + '%'}</span><span class="kpi-k">CTR (clics ÷ impresiones)</span>${delta(v.ctr)}</div>
+        </div>
+        ${d.hayPauta ? `
+        <div class="rejilla">
+          <section class="card span2"><h3>Evolución del periodo</h3><p class="sub">Inversión (barras) y resultados (línea) por ${d.granularidad === 'dia' ? 'día' : d.granularidad}.</p>
+            <div class="lienzo alto"><canvas id="gSerie"></canvas></div></section>
+          <section class="card"><h3>Inversión por marca</h3><div class="lienzo"><canvas id="gMarcas"></canvas></div></section>
+          <section class="card"><h3>Costo por resultado por marca</h3><p class="sub">Más bajo es mejor.</p><div class="lienzo"><canvas id="gCprMarca"></canvas></div></section>
+          <section class="card span2"><h3>Histórico de 12 meses</h3><p class="sub">Para ver tendencias: inversión mensual y costo por resultado.</p>
+            <div class="lienzo alto"><canvas id="gHistorico"></canvas></div></section>
+        </div>
+        <section class="card sin-pad"><div class="cab-card pad"><h3>Resumen por marca</h3></div>
+          <div class="tabla-caja plana"><table>
+            <thead><tr><th>Marca</th><th class="num">Inversión</th><th class="num">Var.</th><th class="num">Resultados</th><th class="num">Costo/resultado</th><th class="num">Var.</th><th class="num">CTR</th></tr></thead>
+            <tbody>${d.porMarca.map(x => {
+              const vi = x.anterior.inversion ? Math.round((x.actual.inversion - x.anterior.inversion) / x.anterior.inversion * 1000) / 10 : null;
+              const vc = x.anterior.cpr && x.actual.cpr !== null ? Math.round((x.actual.cpr - x.anterior.cpr) / x.anterior.cpr * 1000) / 10 : null;
+              return `<tr><td><b>${esc(x.marca)}</b></td><td class="num">${m}${fmtNum(x.actual.inversion, 2)}</td><td class="num">${delta(vi).replace(' vs. periodo anterior', '')}</td>
+                <td class="num">${fmtNum(x.actual.resultados)}</td><td class="num">${x.actual.cpr === null ? '—' : m + fmtNum(x.actual.cpr, 2)}</td>
+                <td class="num">${delta(vc, true).replace(' vs. periodo anterior', '')}</td><td class="num">${x.actual.ctr === null ? '—' : fmtNum(x.actual.ctr, 2) + '%'}</td></tr>`;
+            }).join('') || '<tr><td colspan="7" class="vacio">Sin inversión en el periodo.</td></tr>'}</tbody>
+          </table></div></section>
+        <section class="card sin-pad"><div class="cab-card pad"><h3>Campañas con mayor inversión</h3></div>
+          <div class="tabla-caja plana"><table>
+            <thead><tr><th>Campaña</th><th>Marca</th><th class="num">Inversión</th><th class="num">Resultados</th><th class="num">Costo/resultado</th><th class="num">CTR</th></tr></thead>
+            <tbody>${d.campanas.map(c => `<tr><td class="ancho">${esc(c.campana)}</td><td>${esc(c.marca)}</td><td class="num">${m}${fmtNum(c.inversion, 2)}</td>
+              <td class="num">${fmtNum(c.resultados)}</td><td class="num ${!c.resultados ? 'alerta' : ''}">${c.cpr === null ? 'Sin resultados' : m + fmtNum(c.cpr, 2)}</td>
+              <td class="num">${c.ctr === null ? '—' : fmtNum(c.ctr, 2) + '%'}</td></tr>`).join('') || '<tr><td colspan="6" class="vacio">Sin campañas en el periodo.</td></tr>'}</tbody>
+          </table></div></section>`
+        : `<section class="card aviso-card no-print"><h3>Conecta tus Google Sheets de pauta</h3>
+            <p>Pulsa «Fuentes de datos» y pega el enlace de cada hoja de pauta. La plataforma reconoce columnas como Fecha / Inicio del informe, Campaña, Importe gastado, Alcance, Impresiones, Clics, Resultados, Leads o Mensajes.</p></section>`}
+
+        <h2 class="seccion">Redes sociales</h2>
+        ${d.redes.cuentas.length ? `
+        <div class="rejilla">
+          <section class="card span2"><h3>Seguidores por marca · 12 meses</h3><div class="lienzo alto"><canvas id="gRedes"></canvas></div></section>
+        </div>
+        <section class="card sin-pad"><div class="tabla-caja plana"><table>
+          <thead><tr><th>Marca</th><th>Red</th><th class="num">Seguidores</th><th class="num">Nuevos</th><th class="num">Crecimiento</th><th class="num">Alcance</th><th class="num">Visualizaciones</th><th class="num">Interacciones</th><th class="num">Publicaciones</th></tr></thead>
+          <tbody>${d.redes.cuentas.map(c => `<tr><td><b>${esc(c.marca)}</b></td><td>${esc(c.red)}</td>
+            <td class="num">${c.seguidores === null ? '—' : fmtNum(c.seguidores)}</td>
+            <td class="num ${c.nuevos < 0 ? 'alerta' : ''}">${c.nuevos === null ? '—' : (c.nuevos > 0 ? '+' : '') + fmtNum(c.nuevos)}</td>
+            <td class="num">${c.crecimiento === null ? '—' : `<span class="${c.crecimiento >= 0 ? 'sube' : 'baja'}">${c.crecimiento > 0 ? '+' : ''}${fmtNum(c.crecimiento, 1)}%</span>`}</td>
+            <td class="num">${fmtNum(c.alcance)}</td><td class="num">${fmtNum(c.visualizaciones)}</td><td class="num">${fmtNum(c.interacciones)}</td>
+            <td class="num">${fmtNum(c.publicaciones)}</td></tr>`).join('')}</tbody>
+        </table></div></section>`
+        : '<section class="card"><p class="vacio">Aún no hay métricas de redes para este periodo. Regístralas en «Redes sociales».</p></section>'}
+
+        <h2 class="seccion">Contenido</h2>
+        <div class="kpis">
+          <div class="kpi"><span class="kpi-v">${d.contenido.planificadas}</span><span class="kpi-k">Publicaciones planificadas</span></div>
+          <div class="kpi"><span class="kpi-v">${d.contenido.publicadas}</span><span class="kpi-k">Publicadas</span></div>
+          <div class="kpi ${d.contenido.atrasadas ? 'alerta' : ''}"><span class="kpi-v">${d.contenido.atrasadas}</span><span class="kpi-k">Atrasadas</span></div>
+          <div class="kpi"><span class="kpi-v">${d.contenido.cumplimiento === null ? '—' : d.contenido.cumplimiento + '%'}</span><span class="kpi-k">Cumplimiento de parrilla</span></div>
+        </div>
+        ${d.contenido.planificadas ? `<div class="rejilla">
+          <section class="card"><h3>Por formato</h3>${barras(d.contenido.porFormato)}</section>
+          <section class="card"><h3>Por pilar</h3>${barras(d.contenido.porPilar)}</section>
+          <section class="card span2"><h3>Por marca</h3>
+            ${barras(d.contenido.porMarca.map(x => ({ k: x.marca, v: x.publicadas, extra: `de ${x.planificadas}${x.atrasadas ? ' · ' + x.atrasadas + ' atrasadas' : ''}` })))}</section>
+        </div>` : ''}
+
+        <h2 class="seccion">Operación del equipo</h2>
+        <div class="kpis">
+          <div class="kpi"><span class="kpi-v">${d.operacion.tareasAprobadas}</span><span class="kpi-k">Piezas aprobadas</span></div>
+          <div class="kpi"><span class="kpi-v">${d.operacion.aTiempo === null ? '—' : d.operacion.aTiempo + '%'}</span><span class="kpi-k">Entregadas a tiempo</span></div>
+          <div class="kpi"><span class="kpi-v">${d.operacion.eventos}</span><span class="kpi-k">Eventos cubiertos</span></div>
+          <div class="kpi"><span class="kpi-v">${fmtNum(d.operacion.horas, 1)}</span><span class="kpi-k">Horas registradas</span></div>
+          ${d.operacion.horasExtra !== null ? `<div class="kpi"><span class="kpi-v">${fmtNum(d.operacion.horasExtra, 1)}</span><span class="kpi-k">Horas extra aprobadas</span></div>` : ''}
+        </div>
+        ${d.operacion.tareasPorTipo.length ? `<section class="card"><h3>Piezas aprobadas por tipo</h3>${barras(d.operacion.tareasPorTipo)}</section>` : ''}`;
+
+      // Gráficos
+      if (d.hayPauta) {
+        grafico('gSerie', { type: 'bar', data: { labels: d.serie.map(s => etiquetaSerie(s.k, d.granularidad)), datasets: [
+          { label: 'Inversión (' + S.cfg.moneda + ')', data: d.serie.map(s => s.t.inversion), backgroundColor: PALETA[0], borderRadius: 4, yAxisID: 'y' },
+          { label: 'Resultados', data: d.serie.map(s => s.t.resultados), type: 'line', borderColor: PALETA[1], backgroundColor: PALETA[1], tension: .3, yAxisID: 'y1' }] },
+          options: { scales: { y: { beginAtZero: true }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } } } } });
+        const pm = d.porMarca.filter(x => x.actual.inversion);
+        grafico('gMarcas', { type: 'doughnut', data: { labels: pm.map(x => x.marca), datasets: [{ data: pm.map(x => x.actual.inversion), backgroundColor: PALETA }] } });
+        const pc = d.porMarca.filter(x => x.actual.cpr !== null);
+        grafico('gCprMarca', { type: 'bar', data: { labels: pc.map(x => x.marca), datasets: [
+          { label: 'Periodo', data: pc.map(x => x.actual.cpr), backgroundColor: PALETA[0], borderRadius: 4 },
+          { label: 'Anterior', data: pc.map(x => x.anterior.cpr), backgroundColor: '#94a3b8', borderRadius: 4 }] },
+          options: { indexAxis: 'y', scales: { x: { beginAtZero: true } } } });
+        grafico('gHistorico', { type: 'bar', data: { labels: d.historico.map(h => etiquetaSerie(h.k, 'mes')), datasets: [
+          { label: 'Inversión (' + S.cfg.moneda + ')', data: d.historico.map(h => h.t.inversion), backgroundColor: PALETA[0], borderRadius: 4, yAxisID: 'y' },
+          { label: 'Costo por resultado', data: d.historico.map(h => h.t.cpr), type: 'line', borderColor: PALETA[3], backgroundColor: PALETA[3], tension: .3, spanGaps: true, yAxisID: 'y1' }] },
+          options: { scales: { y: { beginAtZero: true }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } } } } });
+      }
+      if (d.redes.cuentas.length) {
+        grafico('gRedes', { type: 'line', data: { labels: d.redes.meses.map(x => etiquetaSerie(x, 'mes')),
+          datasets: d.redes.seguidoresPorMarca.map((x, i) => ({ label: x.marca, data: x.valores, borderColor: PALETA[i % PALETA.length],
+            backgroundColor: PALETA[i % PALETA.length], tension: .3, spanGaps: true })) } });
+      }
+
+      // Controles
+      $$('[data-tipo]').forEach(b => { b.onclick = () => { S.periodoInf = b.dataset.tipo; repintar(); }; });
+      $$('[data-mov]').forEach(b => { b.onclick = () => { S.anclaInf = moverAncla(tipo, ancla, Number(b.dataset.mov)); repintar(); }; });
+      if ($('#fDesdeI')) {
+        $('#fDesdeI').onchange = e => { S.desdeInf = e.target.value; repintar(); };
+        $('#fHastaI').onchange = e => { S.hastaInf = e.target.value; repintar(); };
+      }
+      $('#fMarcaI').onchange = e => { S.marcaInf = e.target.value; repintar(); };
+      $('#bImprimir').onclick = () => window.print();
+      $('#bFuentes').onclick = () => pintarFuentes();
+    }
+  };
+
+  async function pintarFuentes() {
+    const cont = $('#panelFuentes');
+    if (cont.innerHTML) { cont.innerHTML = ''; return; }
+    const fuentes = await api('listarFuentes');
+    cont.innerHTML = `<section class="card no-print">
+      <div class="cab-card"><h3>Fuentes de datos de pauta</h3>
+        <div class="controles"><button class="btn mini" id="bSyncF">↻ Sincronizar ahora</button><button class="btn mini primario" id="bNuevaF">+ Agregar Google Sheet</button></div></div>
+      <p class="sub">Se leen cada hora. El archivo debe ser un Google Sheet (no .xlsx) y la cuenta marketing@hilariogrp.com debe tener acceso.</p>
+      <div class="tabla-caja plana"><table>
+        <thead><tr><th>Fuente</th><th>Marca</th><th>Pestaña</th><th>Última lectura</th><th></th></tr></thead>
+        <tbody>${fuentes.map(f => `<tr><td><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.nombre)} ↗</a></td><td>${esc(f.marca)}</td>
+          <td>${esc(f.hoja || 'Primera')}</td>
+          <td>${f.ultima_sync ? fmtFecha(f.ultima_sync) + ' ' + esc(f.ultima_sync.slice(11, 16)) : '—'}
+            <small class="${String(f.estado_sync).indexOf('Error') === 0 ? 'alerta' : ''}">${esc(f.estado_sync)}${f.estado_sync === 'OK' ? ' · ' + f.filas + ' filas' : ''}</small></td>
+          <td><button class="btn-ico" data-fuente="${esc(f.id)}" aria-label="Editar">✎</button></td></tr>`).join('')
+          || '<tr><td colspan="5" class="vacio">Aún no hay fuentes.</td></tr>'}</tbody>
+      </table></div></section>`;
+    $('#bNuevaF').onclick = () => formFuente(null);
+    $('#bSyncF').onclick = async e => {
+      e.target.disabled = true;
+      try { await api('sincronizarAhora'); aviso('Datos actualizados'); repintar(); }
+      catch (err) { aviso(err.message, 'error'); e.target.disabled = false; }
+    };
+    cont.onclick = e => {
+      const b = e.target.closest('[data-fuente]');
+      if (b) formFuente(fuentes.find(f => f.id === b.dataset.fuente));
+    };
+  }
+
+  function formFuente(f) {
+    const x = f || {};
+    modal(f ? 'Editar fuente' : 'Agregar Google Sheet de pauta', `
+      <label>Nombre<input name="nombre" required maxlength="120" value="${esc(x.nombre)}" placeholder="Ej.: Pauta Nexo diaria"></label>
+      <div class="dos">
+        <label>Marca<select name="marca" required>${opciones(S.cfg.marcas.concat([['(Columna Marca)', 'Varias (según columna «Marca»)']]), x.marca, 'Elegir…')}</select></label>
+        <label>Pestaña (opcional)<input name="hoja" maxlength="200" value="${esc(x.hoja)}" placeholder="Vacío = primera · * = todas"></label>
+      </div>
+      <label>Enlace del Google Sheet<input name="url" type="url" required value="${esc(x.url)}" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
+      ${f ? '<label class="check"><input type="checkbox" name="quitar"> Quitar esta fuente</label>' : ''}`,
+      async d => {
+        if (f) { d.id = f.id; d.activo = d.quitar !== 'on'; }
+        const r = await api('guardarFuente', d);
+        const mia = r.find(z => z.nombre === d.nombre);
+        if (mia && String(mia.estado).indexOf('Error') === 0) aviso(mia.estado, 'error'); else aviso('Fuente guardada y leída');
+        repintar();
+      }, f ? 'Guardar' : 'Agregar y leer');
+  }
+</script>

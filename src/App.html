@@ -19,7 +19,9 @@
     eventos: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
     horas: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
     contenido: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
-    pauta: 'M3 3v18h18M7 15l4-4 3 3 6-6',
+    informes: 'M3 3v18h18M7 15l4-4 3 3 6-6',
+    redes: 'M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4',
+    sobretiempo: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 7v5l3 2M19 2v4M17 4h4',
     equipo: 'M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6',
     usuarios: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
     cuenta: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
@@ -202,12 +204,14 @@
       ['Operación', [
         ['tareas', g ? 'Producción' : 'Mis tareas'],
         ['solicitudes', 'Solicitudes'],
-        r !== 'practicante' && ['eventos', 'Eventos y rotación'],
-        ['horas', g ? 'Horas y carga' : 'Mis horas']
+        ['eventos', 'Eventos y rotación'],
+        ['horas', g ? 'Horas y carga' : 'Mis horas'],
+        ['sobretiempo', g ? 'Sobretiempo' : 'Mis horas extra']
       ]],
       ['Marketing', [
-        r !== 'practicante' && ['contenido', 'Contenido'],
-        g && ['pauta', 'Pauta Meta Ads']
+        ['contenido', 'Contenido y parrillas'],
+        g && ['redes', 'Redes sociales'],
+        g && ['informes', 'Informes']
       ]],
       ['Administración', [g && ['equipo', 'Equipo'], r === 'admin' && ['usuarios', 'Usuarios']]]
     ].map(([grupo, items]) => [grupo, items.filter(Boolean)]).filter(([, items]) => items.length);

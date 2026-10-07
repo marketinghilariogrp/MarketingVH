@@ -50,11 +50,14 @@ function alertas_(u, datos) {
       add('media', 'Evento pasado sin cerrar: «' + e.titulo + '» (' + e.fecha + '). Márcalo como realizado o cancelado.', 'eventos'));
   }
 
-  datos.agenda.filter(a => a.estado === 'pendiente' && a.fecha < hoy && (gestor || a.responsable_id === u.id)).forEach(a =>
-    add('alta', a.tipo + ' no ejecutada: «' + a.titulo + '» (' + a.fecha + ')', 'contenido'));
+  const hace14 = sumarDias_(hoy, -14);
+  datos.agenda.filter(a => a.estado === 'pendiente' && a.fecha < hoy && a.fecha >= hace14 && (gestor || a.responsable_id === u.id)).forEach(a =>
+    add('alta', a.tipo + ' no ejecutada: «' + a.titulo + '»' + (a.marca ? ' · ' + a.marca : '') + ' (' + a.fecha + ')', 'contenido'));
 
   if (gestor) {
-    try { variacionesPauta_(hoy).forEach(t => add('media', 'Pauta · ' + t, 'pauta')); } catch (e) { /* sin datos de pauta */ }
+    try { alertasPauta_().forEach(t => add('media', 'Pauta · ' + t, 'informes')); } catch (e) { /* sin datos de pauta */ }
+    const extra = leerTabla_('Sobretiempo').filter(s => s.estado === 'pendiente');
+    if (extra.length) add('media', extra.length + ' registros de sobretiempo esperan aprobación', 'sobretiempo');
   }
   return al.sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === 'alta' ? -1 : 1));
 }

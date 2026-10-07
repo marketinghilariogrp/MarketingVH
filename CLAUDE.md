@@ -20,4 +20,9 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
 - Columnas nuevas: agregarlas SIEMPRE al final de su lista en `ESQUEMA` (Utils.gs); `setup()` las migra.
 - Interfaz: `App.html` es el núcleo (estado `S`, `api`, `modal`, `barras`, barra lateral); cada `Vista*.html` registra
   sus pantallas en `VISTAS`. Rol extra `practicante` (Renzo, Abigail).
-- Meta Ads: token en la propiedad del script `META_TOKEN` (lo pone el usuario, nunca Claude). Cuentas en Config.meta_cuentas.
+- NO se conecta la API de Meta Ads (decisión del usuario). La pauta se lee de sus Google Sheets (Fuentes_pauta),
+  reconociendo columnas por encabezado (`COLUMNAS_PAUTA` en Pauta.gs).
+- Equipo actual (oct 2026): Rodrigo, Jefferson (coord.), Gabriela (coord.), Blue, Antony, Renzo y Abigail (practicantes),
+  Chris, Cesi. Fran, Jorge, Challs y Henz ya no están. Marcas: Nexo, Academia VH Business, Vyc, Pagape, Marca Personal, EDE.
+- Horario: L–V 9:00–18:30, sáb 9:00–13:00; fuera de eso es sobretiempo (Sobretiempo.gs).
+- Pruebas: lógica del servidor con stubs en Node (vm) y la interfaz con un `prueba-local.html` que simula google.script.run.

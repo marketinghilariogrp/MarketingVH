@@ -5,13 +5,18 @@
 
 const ESTADOS_AGENDA = ['pendiente', 'hecho', 'cancelado'];
 
+const esDeParrilla_ = a => String(a.origen).indexOf('parrilla:') === 0;
+
 function agendaCliente_(a, u, nombres) {
+  const parrilla = esDeParrilla_(a);
   return {
     id: a.id, fecha: a.fecha, hora: a.hora, titulo: a.titulo, tipo: a.tipo, marca: a.marca,
     campana: a.campana, responsable_id: a.responsable_id, responsable: nombres[a.responsable_id] || '',
-    estado: a.estado, detalle: a.detalle,
-    editable: esGestor_(u),
-    marcable: esGestor_(u) || (a.responsable_id && a.responsable_id === u.id)
+    estado: a.estado, detalle: a.detalle, red: a.red, formato: a.formato, pilar: a.pilar, enlace: a.enlace,
+    estado_material: a.estado_material, parrilla: parrilla,
+    // Lo que viene de una parrilla se edita en su Google Sheet, no aquí.
+    editable: !parrilla && esGestor_(u),
+    marcable: !parrilla && (esGestor_(u) || (a.responsable_id && a.responsable_id === u.id))
   };
 }
 
@@ -40,6 +45,7 @@ function guardarAgenda(token, d) {
     if (d.id) {
       a = leerTabla_('Agenda').find(x => x.id === d.id);
       if (!a) throw new Error('No encontrado.');
+      if (esDeParrilla_(a)) throw new Error('Esta publicación viene de una parrilla: edítala en su Google Sheet.');
       Object.assign(a, datos, { actualizada: ahora_() });
       escribirFila_('Agenda', a);
     } else {
@@ -57,6 +63,7 @@ function estadoAgenda(token, id, estado) {
   return conLock_(() => {
     const a = leerTabla_('Agenda').find(x => x.id === id);
     if (!a) throw new Error('No encontrado.');
+    if (esDeParrilla_(a)) throw new Error('Esta publicación viene de una parrilla: cambia su estado en el Google Sheet.');
     if (!esGestor_(u) && a.responsable_id !== u.id) throw new Error('No tienes permiso para esta acción.');
     a.estado = estado;
     a.actualizada = ahora_();
@@ -93,42 +100,4 @@ function getCalendario(token, mes) {
         responsable: nombres[t.usuario_id] || '—' })),
     feriados: lista_('feriados').filter(enMes)
   };
-}
-
-/* ---------- Parrillas de contenido (enlaces a sus Google Sheets) ---------- */
-
-function listarParrillas(token) {
-  sesion_(token);
-  return leerTabla_('Parrillas').filter(p => p.activo === 'SI')
-    .map(p => ({ id: p.id, marca: p.marca, nombre: p.nombre, url: p.url }))
-    .sort((a, b) => (a.marca + a.nombre).localeCompare(b.marca + b.nombre));
-}
-
-function guardarParrilla(token, d) {
-  const u = sesion_(token);
-  exigirGestor_(u);
-  d = d || {};
-  const datos = {
-    marca: opcion_(d.marca, lista_('marcas'), 'Elige la marca.'),
-    nombre: texto_(d.nombre, 120),
-    url: texto_(d.url, 500)
-  };
-  if (!datos.nombre) throw new Error('Escribe un nombre para la parrilla.');
-  if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[\w-]+/.test(datos.url)) {
-    throw new Error('Pega el enlace de un Google Sheet (https://docs.google.com/spreadsheets/d/…).');
-  }
-  return conLock_(() => {
-    let p;
-    if (d.id) {
-      p = leerTabla_('Parrillas').find(x => x.id === d.id);
-      if (!p) throw new Error('No encontrada.');
-      Object.assign(p, datos, { activo: d.activo === false ? 'NO' : 'SI' });
-      escribirFila_('Parrillas', p);
-    } else {
-      p = Object.assign({ id: uuid_(), activo: 'SI', creado: ahora_() }, datos);
-      agregarFila_('Parrillas', p);
-    }
-    log_(u.id, 'guardar_parrilla', p.id, p.marca + ' · ' + p.nombre);
-    return { id: p.id, marca: p.marca, nombre: p.nombre, url: p.url };
-  });
 }
