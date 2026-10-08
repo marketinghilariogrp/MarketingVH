@@ -27,7 +27,7 @@ const ESQUEMA = {
   Agenda: ['id', 'fecha', 'hora', 'titulo', 'tipo', 'marca', 'campana', 'responsable_id', 'estado',
     'detalle', 'origen', 'creado_por', 'actualizada', 'red', 'formato', 'pilar', 'enlace', 'estado_material',
     'privado', 'recordatorio_min', 'recordar_en', 'recordado'],
-  Notificaciones: ['id', 'usuario_id', 'fecha_hora', 'tipo', 'titulo', 'detalle', 'enlace', 'leida', 'clave', 'actualizada'],
+  Notificaciones: ['id', 'usuario_id', 'fecha_hora', 'tipo', 'titulo', 'detalle', 'enlace', 'leida', 'clave', 'actualizada', 'correo'],
   Parrillas: ['id', 'marca', 'nombre', 'url', 'activo', 'creado', 'sheet_id', 'ultima_sync', 'estado_sync'],
   // Fuentes de pauta: Google Sheets del equipo que se leen y consolidan en Pauta_diaria.
   Fuentes_pauta: ['id', 'marca', 'nombre', 'url', 'hoja', 'activo', 'creado', 'ultima_sync', 'estado_sync', 'filas', 'moneda'],

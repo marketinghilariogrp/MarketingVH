@@ -31,7 +31,10 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
 - Pruebas: lógica del servidor con stubs en Node (vm) y la interfaz con un `prueba-local.html` que simula google.script.run.
 - Notificaciones: la hoja «Requerimiento de Diseño 2026» (Config.hoja_requerimientos) dispara alEditarRequerimientos
   (trigger instalable onEdit). Gabriela recibe todo; Blue además Nexo/V&C; Chris además Academia VHB, Marca Personal,
-  Ede 2.0, VH CONSULTING (Config.notif_requerimientos_*). Recordatorios de agenda: trigger cada 5 min + correo.
+  Ede 2.0, VH CONSULTING (Config.notif_requerimientos_*). Recordatorios de agenda: trigger revisarRecordatorios (cada min).
+- Toda notificación también va por correo (MailApp desde marketing@hilariogrp.com al correo de Usuarios): notificar_ la
+  encola (Notificaciones.correo = 'pendiente') y enviarCorreosNotificaciones (llamado por revisarRecordatorios) manda un
+  correo por persona; requerimientos esperan 2 min sin cambios; se omiten las ya leídas. Config.notif_correo = NO lo apaga.
 - Agenda personal (privado = SI) solo la ve quien la creó; lo del equipo lo ven todos. Borrado lógico: estado
   'eliminado' (agenda/eventos) y 'eliminada' (tareas). Tareas aprobadas pueden ir al histórico (archivada = SI).
 - Horas: hoja Asistencia (ingreso/salida por día). Sobretiempo compensable solo si ese día la persona tenía evento

@@ -40,7 +40,8 @@ const CONFIG_INICIAL = [
     'Google Sheet de requerimientos de diseño: cada cambio genera una notificación'],
   ['notif_requerimientos_todos', 'Gabriela', 'Quiénes reciben TODAS las notificaciones de requerimientos'],
   ['notif_requerimientos_reglas', 'Nexo,V&C,Vyc:Blue; Academia VHB,Marca Personal,Ede 2.0,VH CONSULTING:Chris',
-    'Pestañas:persona que además recibe esos avisos (reglas separadas por punto y coma)']
+    'Pestañas:persona que además recibe esos avisos (reglas separadas por punto y coma)'],
+  ['notif_correo', 'SI', 'SI = cada notificación de la plataforma también llega por correo (desde la cuenta dueña del sistema)']
 ];
 
 // Equipo actual (octubre 2026). La migración 2 lo deja así y desactiva a quienes ya no están.
@@ -248,11 +249,11 @@ function instalarAutomatizaciones() {
   ScriptApp.newTrigger('sincronizarFuentes').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('alertasDiarias').timeBased().everyDays(1).atHour(8).create();
   ScriptApp.newTrigger('copiaSemanal').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(23).create();
-  ScriptApp.newTrigger('revisarRecordatorios').timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger('revisarRecordatorios').timeBased().everyMinutes(1).create();
   const hojaReq = idDeUrl_(config_().hoja_requerimientos || '');
   if (hojaReq) ScriptApp.newTrigger('alEditarRequerimientos').forSpreadsheet(hojaReq).onEdit().create();
   console.log('Automatizaciones instaladas: sincronizarFuentes (cada hora), alertasDiarias (8 a. m.), copiaSemanal (domingos), ' +
-    'revisarRecordatorios (cada 5 min)' + (hojaReq ? ', alEditarRequerimientos (al editar la hoja de requerimientos).' : '.'));
+    'revisarRecordatorios + correos de notificaciones (cada minuto)' + (hojaReq ? ', alEditarRequerimientos (al editar la hoja de requerimientos).' : '.'));
 }
 
 function copiaSemanal() {
