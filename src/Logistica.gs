@@ -6,8 +6,8 @@
  * - Se exporta a un Google Sheet con el formato de logística que usa coordinación de eventos.
  */
 
-const CATEGORIAS_LOGISTICA = ['Audiovisuales', 'Materiales', 'Branding', 'Merchandising', 'Tecnología', 'Mobiliario',
-  'Alimentos y bebidas', 'Otro'];
+const CATEGORIAS_LOGISTICA = ['Cámara', 'Micrófono', 'Drone', 'Cargador', 'Batería', 'Celular', 'Trípode', 'Gimbal',
+  'Adaptador', 'Extensión', 'Mochila', 'Accesorios', 'Gripería', 'Otro'];
 const CARPETA_LOGISTICA = 'MarketingVH · Logística';
 
 function categoriasLogistica_() {
