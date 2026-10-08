@@ -25,7 +25,7 @@ function eventoPorId_(id) {
 function filasAlquiler_(eventoId) {
   return leerTabla_('Alquileres').filter(a => a.evento_id === eventoId && a.estado !== 'eliminado').map(a => ({
     id: 'alq-' + a.id, categoria: 'Alquiler', nombre: a.equipo + (a.detalle ? ' · ' + a.detalle : ''),
-    cantidad: Number(a.cantidad) || 1, origen: a.proveedor || 'Alquiler', responsable: '',
+    cantidad: Number(a.cantidad) || 1, origen: a.proveedor || 'Alquiler', responsable: config_().responsable_alquiler || 'Jefferson',
     observaciones: 'Equipo alquilado' + (a.proveedor ? ' a ' + a.proveedor : '') + ' · ' + a.estado, alquiler: true
   }));
 }
@@ -64,7 +64,7 @@ function guardarLogistica(token, eventoId, items) {
     if (!nombre) throw new Error('Cada fila necesita el nombre del equipo o activo.');
     return {
       id: texto_(x.id, 40), categoria: texto_(x.categoria, 60) || 'Otro', nombre: nombre, cantidad: String(cantidad),
-      origen: texto_(x.origen, 120), responsable: texto_(x.responsable, 120), observaciones: texto_(x.observaciones, 300),
+      origen: texto_(x.origen, 120) || 'Marketing', responsable: texto_(x.responsable, 120), observaciones: texto_(x.observaciones, 300),
       orden: String(i + 1)
     };
   });
