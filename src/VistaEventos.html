@@ -328,7 +328,8 @@
   VISTAS.calendario = {
     titulo: 'Calendario',
     async pintar() {
-      const modo = S.modoCal || 'mes';
+      if (S.modoCal === 'otros' && esGestor()) return pintarOtrosCal();
+      const modo = S.modoCal === 'dia' ? 'dia' : 'mes';
       const dia = S.diaCal || S.hoy;
       const mes = modo === 'dia' ? dia.slice(0, 7) : (S.mesCal || S.hoy.slice(0, 7));
       const d = await cargarMesCal(mes);
@@ -336,8 +337,7 @@
       $('#vista').innerHTML = `
         <div class="toolbar">
           <div class="controles">
-            <div class="pestanas"><button class="pestana ${modo === 'mes' ? 'activo' : ''}" data-modo="mes">Mes</button>
-              <button class="pestana ${modo === 'dia' ? 'activo' : ''}" data-modo="dia">Día</button></div>
+            ${pestanasCal(modo)}
             ${modo === 'mes' ? navMes(mes) : `<div class="nav-mes"><button type="button" class="btn-ico" data-dia="-1" aria-label="Día anterior">‹</button>
               <strong>${diaSemana(dia)} ${fmtFecha(dia)}</strong><button type="button" class="btn-ico" data-dia="1" aria-label="Día siguiente">›</button></div>`}
           </div>
@@ -367,6 +367,96 @@
       };
     }
   };
+
+  function pestanasCal(modo) {
+    return `<div class="pestanas"><button class="pestana ${modo === 'mes' ? 'activo' : ''}" data-modo="mes">Mes</button>
+      <button class="pestana ${modo === 'dia' ? 'activo' : ''}" data-modo="dia">Día</button>
+      ${esGestor() ? `<button class="pestana ${modo === 'otros' ? 'activo' : ''}" data-modo="otros">Otros calendarios</button>` : ''}</div>`;
+  }
+
+  /* ---------- Otros calendarios (Google Calendar de la cuenta de marketing, solo lectura) ---------- */
+
+  const cacheOtrosCal = {};
+  const leerOcultosCal = () => { try { return JSON.parse(localStorage.getItem('vh_cal_ocultos') || '[]'); } catch (e) { return []; } };
+  const guardarOcultosCal = l => { try { localStorage.setItem('vh_cal_ocultos', JSON.stringify(l)); } catch (e) { /* sin almacenamiento */ } };
+
+  async function pintarOtrosCal(refrescar) {
+    const mes = S.mesCal || S.hoy.slice(0, 7);
+    if (!cacheOtrosCal[mes] || refrescar) cacheOtrosCal[mes] = await api('getOtrosCalendarios', mes, !!refrescar);
+    const d = cacheOtrosCal[mes];
+    if (S.vista !== 'calendario' || S.modoCal !== 'otros') return;
+    const ocultos = leerOcultosCal();
+    const visibles = d.calendarios.filter(c => !ocultos.includes(c.nombre));
+    const color = Object.fromEntries(d.calendarios.map(c => [c.id, c.color]));
+    const nombreCal = Object.fromEntries(d.calendarios.map(c => [c.id, c.nombre]));
+
+    // Cada evento se reparte en los días que dura (dentro del mes).
+    const porDia = {};
+    d.eventos.filter(e => visibles.some(c => c.id === e.cal)).forEach(e => {
+      for (let f = e.inicio.slice(0, 10), n = 0; f <= e.fin.slice(0, 10) && n < 62; f = sumarDias(f, 1), n++) {
+        if (f.slice(0, 7) === mes) (porDia[f] = porDia[f] || []).push(e);
+      }
+    });
+    const ordenEv = (a, b) => (b.todo_dia - a.todo_dia) || a.inicio.localeCompare(b.inicio);
+
+    const primero = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5)) - 1, 1);
+    const offset = (primero.getDay() + 6) % 7;
+    const diasMes = new Date(primero.getFullYear(), primero.getMonth() + 1, 0).getDate();
+    const celdas = [];
+    for (let i = 0; i < offset; i++) celdas.push('<div class="dia vacio-dia"></div>');
+    for (let n = 1; n <= diasMes; n++) {
+      const f = `${mes}-${String(n).padStart(2, '0')}`;
+      const items = (porDia[f] || []).sort(ordenEv);
+      celdas.push(`<button class="dia${f === S.hoy ? ' hoy' : ''}" data-fext="${f}">
+        <span class="num-dia">${n}</span>
+        ${items.slice(0, 3).map(e => `<span class="item" style="background:${esc(color[e.cal])}">${esc((e.todo_dia ? '' : e.inicio.slice(11) + ' ') + e.titulo)}</span>`).join('')}
+        ${items.length > 3 ? `<span class="mas">+${items.length - 3} más</span>` : ''}
+        ${items.length ? `<span class="puntos">${items.slice(0, 5).map(e => `<i style="background:${esc(color[e.cal])}"></i>`).join('')}</span>` : ''}
+      </button>`);
+    }
+
+    $('#vista').innerHTML = `
+      <div class="toolbar">
+        <div class="controles">${pestanasCal('otros')}${navMes(mes)}</div>
+        <div class="controles">
+          ${mes !== S.hoy.slice(0, 7) ? '<button class="btn" id="bHoy">Hoy</button>' : ''}
+          <button class="btn" id="bRefrescarCal" title="Volver a leer Google Calendar">Actualizar</button>
+        </div>
+      </div>
+      ${d.calendarios.length ? `<div class="leyenda cal-ext">${d.calendarios.map(c => `<label>
+          <input type="checkbox" data-cal="${esc(c.nombre)}" ${ocultos.includes(c.nombre) ? '' : 'checked'}>
+          <i style="background:${esc(c.color)}"></i>${esc(c.nombre)}</label>`).join('')}</div>`
+        : '<p class="sub">No se encontró ninguno de los calendarios configurados.</p>'}
+      ${d.faltan.length ? `<p class="sub">No encontrados en la cuenta de marketing: <b>${d.faltan.map(esc).join(', ')}</b>.
+        ${esAdmin() && d.disponibles.length ? `Calendarios disponibles: ${d.disponibles.map(esc).join(' · ')}. Ajusta los nombres en Config → calendarios_externos.` : ''}</p>` : ''}
+      <div class="calendario">${DIAS.map(x => `<div class="cab-dia">${x}</div>`).join('')}${celdas.join('')}</div>
+      <p class="sub">Vienen del Google Calendar de marketing@hilariogrp.com (solo lectura). Toca un día para ver el detalle. Leído: ${esc(d.actualizado.slice(11, 16))}.</p>`;
+
+    $$('[data-modo]').forEach(b => { b.onclick = () => { S.modoCal = b.dataset.modo; repintar(); }; });
+    enlazarNavMes($('#vista'), mes, m => { S.mesCal = m; repintar(); });
+    if ($('#bHoy')) $('#bHoy').onclick = () => { S.mesCal = S.hoy.slice(0, 7); repintar(); };
+    $('#bRefrescarCal').onclick = () => pintarOtrosCal(true).catch(e => aviso(e.message, 'error'));
+    $('#vista').onchange = e => {
+      const c = e.target.closest('[data-cal]');
+      if (!c) return;
+      const l = leerOcultosCal().filter(x => x !== c.dataset.cal);
+      if (!c.checked) l.push(c.dataset.cal);
+      guardarOcultosCal(l);
+      pintarOtrosCal();
+    };
+    $('#vista').onclick = e => {
+      const celda = e.target.closest('[data-fext]');
+      if (!celda) return;
+      const f = celda.dataset.fext;
+      const items = (porDia[f] || []).sort(ordenEv);
+      modal(`${diaSemana(f)} ${fmtFecha(f)}`, items.length ? `<ul class="lista">${items.map(e => `<li>
+          <span class="fecha-chip" style="background:${esc(color[e.cal])};color:#fff">${e.todo_dia ? 'Día' : esc(e.inicio.slice(11))}</span>
+          <div><b>${esc(e.titulo)}</b>
+            <small>${[e.todo_dia ? 'Todo el día' : e.inicio.slice(11) + '–' + e.fin.slice(11), nombreCal[e.cal], e.lugar].filter(Boolean).map(esc).join(' · ')}</small>
+            ${e.detalle.trim() ? `<small>${esc(e.detalle.trim())}</small>` : ''}</div></li>`).join('')}</ul>`
+        : '<p class="vacio">No hay eventos de los calendarios marcados este día.</p>', null);
+    };
+  }
 
   function itemsDelDia(f, d) {
     return {

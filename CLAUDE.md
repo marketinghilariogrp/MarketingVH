@@ -49,3 +49,6 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
   edita su lista y la de cada coordinador; un coordinador solo la suya y puede dejarle al admin un pendiente (título +
   prioridad) del que solo ve la confirmación («enviados»). «Pasar al calendario» crea agenda privada de su dueño.
   Lo no hecho pasa solo a hoy (al abrir la lista y en alertasDiarias); fecha_original guarda el día en que se anotó.
+- Otros calendarios (OtrosCalendarios.gs): Calendario → «Otros calendarios» lee con CalendarApp los calendarios suscritos de
+  marketing@hilariogrp.com listados en Config.calendarios_externos (solo admin/coordinación, solo lectura, caché 5 min).
+  Las casillas de qué calendarios ver se guardan en localStorage. Requiere el scope de Calendar (autorizarCalendarios).
