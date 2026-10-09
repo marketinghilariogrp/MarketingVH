@@ -27,7 +27,7 @@
   }
 
   function itemPend(x, atrasado) {
-    return `<li class="p-${esc(x.prioridad)}${x.hecho ? ' hecho' : ''}" data-id="${esc(x.id)}">
+    return `<li class="p-${esc(x.prioridad)}${x.hecho ? ' hecho' : ''}${x.guardando ? ' guardando' : ''}" data-id="${esc(x.id)}">
       <input type="checkbox" data-acc="hecho" ${x.hecho ? 'checked' : ''} aria-label="Hecho">
       <div><span class="${x.hecho ? 'tachado' : ''}">${esc(x.titulo)}</span>
         <span class="chip p-${esc(x.prioridad)}">${PRIO_TXT[x.prioridad]}</span>
@@ -44,6 +44,19 @@
   }
 
   function pintarPendientes() {
+    // Conserva lo que se está escribiendo: las respuestas del servidor repintan mientras se agregan más pendientes.
+    const campo = $('#fPend [name=titulo]');
+    const borrador = campo ? { valor: campo.value, foco: document.activeElement === campo, prioridad: $('#fPend [name=prioridad]').value } : null;
+    pintarVistaPendientes();
+    if (borrador) {
+      const c = $('#fPend [name=titulo]');
+      c.value = borrador.valor;
+      $('#fPend [name=prioridad]').value = borrador.prioridad;
+      if (borrador.foco) c.focus();
+    }
+  }
+
+  function pintarVistaPendientes() {
     const d = P.d;
     const propia = P.lista === S.u.id;
     const nombreLista = (d.listas.find(l => l.id === P.lista) || {}).nombre;
@@ -98,12 +111,22 @@
       e.preventDefault();
       const f = Object.fromEntries(new FormData(e.target));
       if (!f.titulo.trim()) return;
+      // Aparece al instante en gris y se guarda por detrás; se puede seguir agregando sin esperar.
+      const d0 = P.d;
+      const tmp = { id: 'tmp-' + Math.random().toString(36).slice(2), usuario_id: P.lista, fecha: P.dia, titulo: f.titulo.trim(),
+        prioridad: f.prioridad, detalle: '', hecho: false, de: '', en_calendario: false, guardando: true };
+      d0.items.push(tmp);
+      $('#fPend [name=titulo]').value = '';
+      pintarPendientes();
+      $('#fPend [name=titulo]').focus();
       try {
-        const x = await api('guardarPendiente', { usuario_id: P.lista, fecha: P.dia, titulo: f.titulo, prioridad: f.prioridad });
-        P.d.items.push(x);
-        pintarPendientes();
-        $('#fPend [name=titulo]').focus();
-      } catch (err) { aviso(err.message, 'error'); }
+        const x = await api('guardarPendiente', { usuario_id: tmp.usuario_id, fecha: tmp.fecha, titulo: tmp.titulo, prioridad: tmp.prioridad });
+        d0.items = d0.items.map(i => (i.id === tmp.id ? x : i));
+      } catch (err) {
+        d0.items = d0.items.filter(i => i.id !== tmp.id);
+        aviso(err.message, 'error');
+      }
+      if (P.d === d0) pintarPendientes();
     };
     if ($('#bParaAdmin')) $('#bParaAdmin').onclick = formParaAdmin;
     if ($('#bHoy')) $('#bHoy').onclick = () => { P.dia = d.hoy; irDia(); };
@@ -119,17 +142,22 @@
       if (!b) return;
       const id = b.closest('li').dataset.id;
       const x = P.d.items.concat(P.d.atrasados).find(i => i.id === id);
-      if (!x) return;
+      if (!x || x.guardando) return;
       try {
-        if (b.dataset.acc === 'hecho') { reemplazarPend(await api('marcarPendiente', id, b.checked)); }
+        if (b.dataset.acc === 'hecho') {
+          const d0 = P.d;
+          reemplazarPend(Object.assign({}, x, { hecho: b.checked, guardando: true }));
+          const r = await api('marcarPendiente', id, b.checked);
+          if (P.d === d0) reemplazarPend(r);
+        }
         else if (b.dataset.acc === 'hoy') { await api('guardarPendiente', Object.assign({}, x, { fecha: P.d.hoy })); await cargarPendientes(); }
         else if (b.dataset.acc === 'editar') formPendiente(x);
         else if (b.dataset.acc === 'calendario') formPendienteCalendario(x);
         else if (b.dataset.acc === 'eliminar' && await confirmar(`¿Eliminar «${x.titulo}»?`, 'Eliminar')) {
-          await api('eliminarPendiente', id);
           P.d.items = P.d.items.filter(i => i.id !== id);
           P.d.atrasados = P.d.atrasados.filter(i => i.id !== id);
           pintarPendientes();
+          await api('eliminarPendiente', id);
         }
       } catch (err) { aviso(err.message, 'error'); cargarPendientes().catch(() => {}); }
     };
