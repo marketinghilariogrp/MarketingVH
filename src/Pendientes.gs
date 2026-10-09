@@ -9,10 +9,10 @@
 
 const PRIORIDADES_PEND = ['alta', 'media', 'baja'];
 
-/** Listas que u puede ver: la suya y, si es admin, la de cada coordinador activo. */
+/** Listas que u puede ver: la suya y, si es admin, la de cada coordinador activo (menos Config.excluidos_pendientes). */
 function listasPendientes_(u) {
   if (u.rol !== 'admin') return [u];
-  return [u].concat(usuarios_().filter(x => x.rol === 'coordinador' && x.activo === 'SI'));
+  return [u].concat(usuarios_().filter(x => x.rol === 'coordinador' && x.activo === 'SI' && !excluidoDe_(x, 'excluidos_pendientes')));
 }
 
 function puedeVerLista_(u, usuarioId) {

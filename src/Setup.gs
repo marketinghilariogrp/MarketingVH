@@ -42,6 +42,7 @@ const CONFIG_INICIAL = [
   ['notif_requerimientos_reglas', 'Nexo,V&C,Vyc:Blue; Academia VHB,Marca Personal,Ede 2.0,VH CONSULTING:Chris',
     'Pestañas:persona que además recibe esos avisos (reglas separadas por punto y coma)'],
   ['responsable_alquiler', 'Jefferson', 'Responsable de los equipos alquilados en la lista de logística'],
+  ['excluidos_pendientes', 'Jefferson', 'Coordinadores cuya lista de pendientes no aparece (Jefferson usa la cuenta de administrador)'],
   ['notif_correo', 'SI', 'SI = cada notificación de la plataforma también llega por correo (desde la cuenta dueña del sistema)']
 ];
 
