@@ -57,7 +57,7 @@ function crearSolicitud(token, d) {
 function asignarSolicitud(token, id, usuarioId) {
   const u = sesion_(token);
   exigirGestor_(u);
-  return conLock_(() => {
+  const r = conLock_(() => {
     const s = leerTabla_('Solicitudes').find(x => x.id === id);
     if (!s) throw new Error('Solicitud no encontrada.');
     if (s.estado !== 'nueva') throw new Error('Esta solicitud ya fue atendida.');
@@ -74,6 +74,8 @@ function asignarSolicitud(token, id, usuarioId) {
     tareas[t.id] = t;
     return solicitudCliente_(s, mapaNombres_(), tareas);
   });
+  correoTareaNueva_();
+  return r;
 }
 
 function rechazarSolicitud(token, id, nota) {

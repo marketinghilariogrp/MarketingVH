@@ -132,10 +132,12 @@ function crearTarea(token, d) {
   const u = sesion_(token);
   exigirGestor_(u);
   const datos = validarTarea_(d || {});
-  return conLock_(() => {
+  const r = conLock_(() => {
     const t = crearTareaInterna_(u, datos, '');
     return tareaCliente_(t, u, config_(), mapaNombres_());
   });
+  correoTareaNueva_();
+  return r;
 }
 
 /** Crea la fila de la tarea. Llamar dentro de conLock_ con datos ya validados. */
@@ -148,23 +150,43 @@ function crearTareaInterna_(u, datos, solicitudId) {
   agregarFila_('Tareas', t);
   registrarHistorial_(t.id, u.id, '', 'pendiente', '');
   log_(u.id, 'crear_tarea', t.id, t.titulo);
+  avisarTareaAsignada_(t, u);
   return t;
+}
+
+/** Aviso (campana + correo) a quien recibe una tarea que le asignó otra persona. Llamar dentro de conLock_. */
+function avisarTareaAsignada_(t, u) {
+  if (!t.usuario_id || t.usuario_id === u.id) return;
+  const partes = [t.marca, t.pieza && t.pieza !== t.titulo ? t.pieza : '', 'Prioridad ' + t.prioridad,
+    t.vence ? 'Entrega: ' + fmtFechaHora_(t.vence, '') : '', 'Asignada por ' + u.nombre].filter(Boolean);
+  notificar_([t.usuario_id], 'tarea', 'Nueva tarea: ' + t.titulo,
+    partes.join(' · ') + (t.descripcion ? ' — ' + String(t.descripcion).slice(0, 300) : ''), '', '');
+}
+
+/** Envía enseguida el correo de la tarea nueva (sin esperar al trigger). Llamar fuera de conLock_. */
+function correoTareaNueva_() {
+  try { enviarCorreosNotificaciones(); } catch (e) { console.log('Correo de tarea: ' + e.message); }
 }
 
 function editarTarea(token, d) {
   const u = sesion_(token);
   exigirGestor_(u);
   const datos = validarTarea_(d || {});
-  return conLock_(() => {
+  let reasignada = false;
+  const r = conLock_(() => {
     const t = buscarTarea_(d.id);
     if (['pendiente', 'en_progreso', 'pausada', 'revision'].indexOf(t.estado) < 0) {
       throw new Error('Solo se pueden editar tareas abiertas.');
     }
+    reasignada = !!datos.usuario_id && datos.usuario_id !== t.usuario_id;
     Object.assign(t, datos, { actualizada: ahora_() });
     escribirFila_('Tareas', t);
     log_(u.id, 'editar_tarea', t.id, t.titulo);
+    if (reasignada) avisarTareaAsignada_(t, u);
     return tareaCliente_(t, u, config_(), mapaNombres_());
   });
+  if (reasignada) correoTareaNueva_();
+  return r;
 }
 
 function moverTarea(token, id, estado, nota) {
