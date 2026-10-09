@@ -28,7 +28,7 @@ const TRANSICIONES = {
     { a: 'en_progreso', quien: 'gestor', etiqueta: 'Devolver', nota: true, motivo: 'Escribe el motivo de la devolución.' }
   ],
   aprobada: [
-    { a: 'revision', quien: 'admin', etiqueta: 'Reabrir', confirmar: true }
+    { a: 'revision', quien: 'admin', etiqueta: 'Reabrir', nota: true, motivo: 'Escribe el motivo para reabrir.' }
   ],
   cancelada: [
     { a: 'pendiente', quien: 'gestor', etiqueta: 'Reactivar' }
@@ -192,7 +192,8 @@ function editarTarea(token, d) {
 function moverTarea(token, id, estado, nota) {
   const u = sesion_(token);
   const cfg = config_();
-  return conLock_(() => {
+  let avisado = false;
+  const r = conLock_(() => {
     const t = buscarTarea_(id);
     if (!esGestor_(u) && t.usuario_id !== u.id) throw new Error('No tienes acceso a esta tarea.');
 
@@ -221,9 +222,25 @@ function moverTarea(token, id, estado, nota) {
     escribirFila_('Tareas', t);
     registrarHistorial_(t.id, u.id, antes, estado, nota);
     log_(u.id, 'estado_tarea', t.id, antes + ' → ' + estado + (nota ? ' · ' + nota : ''));
+    avisado = avisarCambioTarea_(t, u, antes, estado, nota);
     const hist = u.rol === 'admin' ? leerTabla_('Tareas_historial').filter(h => h.tarea_id === t.id) : null;
     return tareaCliente_(t, u, cfg, mapaNombres_(), hist);
   });
+  if (avisado) correoTareaNueva_();
+  return r;
+}
+
+/** Aviso (campana + correo) al responsable cuando le devuelven o le reabren una tarea. Llamar dentro de conLock_. */
+function avisarCambioTarea_(t, u, antes, estado, nota) {
+  if (!t.usuario_id || t.usuario_id === u.id) return false;
+  let titulo;
+  if (antes === 'revision' && estado === 'en_progreso') titulo = 'Tarea devuelta para corregir: ';
+  else if (antes === 'aprobada' && estado === 'revision') titulo = 'Tarea reabierta: ';
+  else return false;
+  notificar_([t.usuario_id], 'tarea', titulo + t.titulo,
+    'Motivo: ' + nota + ' · ' + [t.marca, 'Prioridad ' + t.prioridad, t.vence ? 'Entrega: ' + fmtFechaHora_(t.vence, '') : '',
+      'Por ' + u.nombre].filter(Boolean).join(' · '), '', '');
+  return true;
 }
 
 /* ---------- Histórico y limpieza ---------- */

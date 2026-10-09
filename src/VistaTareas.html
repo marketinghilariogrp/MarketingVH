@@ -145,14 +145,17 @@
     if (S.vista === 'tareas') pintarTablero();
   }
 
-  /** Pide el motivo (pausa o devolución) y luego mueve la tarjeta al instante. */
+  /** Pide el motivo (pausa, devolución o reapertura) y luego mueve la tarjeta al instante. */
   function formMotivo(t, acc) {
     const pausa = acc.a === 'pausada';
-    modal(`${pausa ? 'Pausar' : 'Devolver'} «${t.titulo}»`, `
-      <label>${pausa ? '¿Por qué se pausa esta tarea?' : '¿Qué hay que corregir?'}
+    const pregunta = pausa ? '¿Por qué se pausa esta tarea?' : acc.etiqueta === 'Reabrir' ? '¿Por qué se reabre esta tarea?' : '¿Qué hay que corregir?';
+    const avisa = !pausa && t.usuario_id !== S.u.id;
+    modal(`${acc.etiqueta} «${t.titulo}»`, `
+      <label>${pregunta}
         <textarea name="nota" rows="3" maxlength="1000" required placeholder="${pausa ? 'Ej.: esperando material del cliente, reunión, otra prioridad…' : ''}"></textarea></label>
-      ${pausa ? '<p class="sub">Cuando puedas continuar, pulsa «Reanudar» en la tarjeta.</p>' : ''}`,
-      async d => { moverOptimista(t, acc, d.nota); }, pausa ? 'Pausar' : 'Devolver');
+      ${pausa ? '<p class="sub">Cuando puedas continuar, pulsa «Reanudar» en la tarjeta.</p>' : ''}
+      ${avisa ? '<p class="sub">El responsable recibirá un aviso en la plataforma y por correo con este motivo.</p>' : ''}`,
+      async d => { moverOptimista(t, acc, d.nota); }, acc.etiqueta);
   }
 
   /** Historial de acciones con fecha y hora (solo admin). */
