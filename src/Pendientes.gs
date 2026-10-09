@@ -5,6 +5,8 @@
  * - Un coordinador puede dejarle un pendiente al admin (solo qué es y la prioridad); ve la confirmación
  *   de lo que envió, pero nunca la lista del admin.
  * - Cualquier pendiente se puede pasar al calendario como agenda personal de su dueño.
+ * - Lo que no se marcó como hecho pasa solo al día siguiente (al día actual al abrir la lista); fecha_original guarda
+ *   el día en que se anotó.
  */
 
 const PRIORIDADES_PEND = ['alta', 'media', 'baja'];
@@ -30,7 +32,7 @@ function pendCliente_(p, nombres) {
   return {
     id: p.id, usuario_id: p.usuario_id, fecha: p.fecha, titulo: p.titulo, detalle: p.detalle, prioridad: p.prioridad,
     hecho: p.hecho === 'SI', creado_por: p.creado_por, de: p.creado_por !== p.usuario_id ? nombres[p.creado_por] || '' : '',
-    en_calendario: !!p.agenda_id
+    en_calendario: !!p.agenda_id, viene_de: p.fecha_original || ''
   };
 }
 
@@ -42,7 +44,7 @@ function pendienteEditable_(u, id) {
 }
 
 /**
- * Pendientes de la lista usuarioId entre desde y hasta (una semana), más los atrasados sin hacer.
+ * Pendientes de la lista usuarioId entre desde y hasta (una semana). Antes pasa a hoy lo que quedó sin hacer.
  * Para la coordinación incluye «enviados»: lo que dejó al admin, solo con su estado.
  */
 function getPendientes(token, usuarioId, desde, hasta) {
@@ -53,17 +55,36 @@ function getPendientes(token, usuarioId, desde, hasta) {
   if (!esFecha_(desde) || !esFecha_(hasta)) throw new Error('Rango no válido.');
   const hoy = hoy_();
   const nombres = mapaNombres_();
+  pasarSinHacerAHoy_(usuarioId, hoy);
   const todos = leerTabla_('Pendientes').filter(p => p.estado !== 'eliminado');
   const deLista = todos.filter(p => p.usuario_id === usuarioId);
   return {
     hoy: hoy,
     listas: listasPendientes_(u).map(x => ({ id: x.id, nombre: x.id === u.id ? 'Mis pendientes' : x.nombre })),
     items: deLista.filter(p => p.fecha >= desde && p.fecha <= hasta).map(p => pendCliente_(p, nombres)),
-    atrasados: deLista.filter(p => p.fecha < hoy && p.hecho !== 'SI').map(p => pendCliente_(p, nombres)),
     enviados: u.rol === 'admin' ? [] : todos.filter(p => p.creado_por === u.id && p.usuario_id !== u.id)
       .sort((a, b) => b.creado.localeCompare(a.creado)).slice(0, 20)
       .map(p => ({ id: p.id, titulo: p.titulo, prioridad: p.prioridad, enviado: p.creado, para: nombres[p.usuario_id] || '', hecho: p.hecho === 'SI' }))
   };
+}
+
+/** Mueve a hoy los pendientes de días anteriores que no se marcaron como hechos. */
+function pasarSinHacerAHoy_(usuarioId, hoy) {
+  const atrasado = p => p.usuario_id === usuarioId && p.estado !== 'eliminado' && p.hecho !== 'SI' && p.fecha < hoy;
+  if (!leerTabla_('Pendientes').some(atrasado)) return;
+  conLock_(() => {
+    leerTabla_('Pendientes').filter(atrasado).forEach(p => {
+      Object.assign(p, { fecha_original: p.fecha_original || p.fecha, fecha: hoy, actualizado: ahora_() });
+      escribirFila_('Pendientes', p);
+    });
+  });
+}
+
+/** Todas las listas: lo usa el trigger diario para que el cambio de día no dependa de abrir la sección. */
+function pasarPendientesSinHacer() {
+  const hoy = hoy_();
+  Array.from(new Set(leerTabla_('Pendientes').filter(p => p.hecho !== 'SI' && p.estado !== 'eliminado' && p.fecha < hoy)
+    .map(p => p.usuario_id))).forEach(id => pasarSinHacerAHoy_(id, hoy));
 }
 
 /**

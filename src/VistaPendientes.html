@@ -26,17 +26,16 @@
     pintarPendientes();
   }
 
-  function itemPend(x, atrasado) {
+  function itemPend(x) {
     return `<li class="p-${esc(x.prioridad)}${x.hecho ? ' hecho' : ''}${x.guardando ? ' guardando' : ''}" data-id="${esc(x.id)}">
       <input type="checkbox" data-acc="hecho" ${x.hecho ? 'checked' : ''} aria-label="Hecho">
       <div><span class="${x.hecho ? 'tachado' : ''}">${esc(x.titulo)}</span>
         <span class="chip p-${esc(x.prioridad)}">${PRIO_TXT[x.prioridad]}</span>
         ${x.detalle ? `<small>${esc(x.detalle)}</small>` : ''}
-        ${x.de || x.en_calendario || atrasado ? `<small>${[atrasado && 'Del ' + diaSemana(x.fecha) + ' ' + fmtFecha(x.fecha).slice(0, 5),
+        ${x.de || x.en_calendario || x.viene_de ? `<small>${[x.viene_de && '↪ Pasó del ' + diaSemana(x.viene_de) + ' ' + fmtFecha(x.viene_de).slice(0, 5),
           x.de && 'De: ' + x.de, x.en_calendario && '📅 En el calendario'].filter(Boolean).map(esc).join(' · ')}</small>` : ''}
       </div>
       <div class="pend-acc">
-        ${atrasado ? '<button type="button" class="btn mini" data-acc="hoy">Pasar a hoy</button>' : ''}
         ${x.en_calendario ? '' : '<button type="button" class="btn-ico" data-acc="calendario" title="Pasar al calendario" aria-label="Pasar al calendario">📅</button>'}
         <button type="button" class="btn-ico" data-acc="editar" title="Editar" aria-label="Editar">✎</button>
         <button type="button" class="btn-ico" data-acc="eliminar" title="Eliminar" aria-label="Eliminar">×</button>
@@ -94,9 +93,6 @@
           <select name="prioridad" aria-label="Prioridad">${opciones(OPC_PRIO, 'media')}</select>
           <button class="btn primario">Agregar</button>
         </form>
-        ${P.dia === d.hoy && d.atrasados.length ? `<p class="grupo-pend">Atrasados</p>
-          <ul class="lista pend-lista">${d.atrasados.slice().sort(ordenPend).map(x => itemPend(x, true)).join('')}</ul>
-          <p class="grupo-pend">Hoy</p>` : ''}
         <ul class="lista pend-lista">${delDia.map(x => itemPend(x)).join('') || '<li class="vacio">Nada anotado para este día.</li>'}</ul>
       </section>
       ${d.enviados.length ? `<section class="card">
@@ -141,7 +137,7 @@
       const b = e.target.closest('[data-acc]');
       if (!b) return;
       const id = b.closest('li').dataset.id;
-      const x = P.d.items.concat(P.d.atrasados).find(i => i.id === id);
+      const x = P.d.items.find(i => i.id === id);
       if (!x || x.guardando) return;
       try {
         if (b.dataset.acc === 'hecho') {
@@ -150,12 +146,10 @@
           const r = await api('marcarPendiente', id, b.checked);
           if (P.d === d0) reemplazarPend(r);
         }
-        else if (b.dataset.acc === 'hoy') { await api('guardarPendiente', Object.assign({}, x, { fecha: P.d.hoy })); await cargarPendientes(); }
         else if (b.dataset.acc === 'editar') formPendiente(x);
         else if (b.dataset.acc === 'calendario') formPendienteCalendario(x);
         else if (b.dataset.acc === 'eliminar' && await confirmar(`¿Eliminar «${x.titulo}»?`, 'Eliminar')) {
           P.d.items = P.d.items.filter(i => i.id !== id);
-          P.d.atrasados = P.d.atrasados.filter(i => i.id !== id);
           pintarPendientes();
           await api('eliminarPendiente', id);
         }
@@ -172,8 +166,7 @@
   }
 
   function reemplazarPend(x) {
-    ['items', 'atrasados'].forEach(k => { P.d[k] = P.d[k].map(i => (i.id === x.id ? x : i)); });
-    if (x.hecho) P.d.atrasados = P.d.atrasados.filter(i => i.id !== x.id);
+    P.d.items = P.d.items.map(i => (i.id === x.id ? x : i));
     pintarPendientes();
   }
 

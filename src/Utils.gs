@@ -43,7 +43,7 @@ const ESQUEMA = {
   Resumen_mensual: ['mes', 'usuario_id', 'tareas_ok', 'a_tiempo', 'horas_extra', 'eventos', 'saldo'],
   // Checklist del día por prioridad (admin y coordinación). usuario_id = dueño de la lista.
   Pendientes: ['id', 'usuario_id', 'fecha', 'titulo', 'detalle', 'prioridad', 'hecho', 'creado_por', 'creado', 'actualizado',
-    'completado', 'agenda_id', 'estado'],
+    'completado', 'agenda_id', 'estado', 'fecha_original'],
   Config: ['clave', 'valor', 'descripcion'],
   Log: ['fecha_hora', 'usuario', 'accion', 'id_afectado', 'detalle']
 };

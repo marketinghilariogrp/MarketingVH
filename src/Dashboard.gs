@@ -135,6 +135,7 @@ function getDashboard(token) {
 
 /** Trigger diario (8:00 a. m.): envía las alertas del equipo a los correos de reporte. */
 function alertasDiarias() {
+  try { pasarPendientesSinHacer(); } catch (e) { console.log('Pendientes: ' + e.message); }
   const destinatarios = lista_('correos_reporte').join(',');
   if (!destinatarios) return;
   const al = alertas_(null, datosBase_());
