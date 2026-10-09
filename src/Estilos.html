@@ -398,6 +398,28 @@
   .log-agregar { display: grid; grid-template-columns: 2fr 1.1fr 70px 1.1fr 1.1fr auto; gap: 6px; align-items: end; padding: 10px;
     border: 1px dashed var(--borde); border-radius: 10px; background: var(--fondo); }
   .log-agregar label { font-size: 12px; }
+  /* Pendientes */
+  .pend-semana { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 10px; }
+  .pend-dia { border: 1px solid var(--borde); background: var(--panel); color: var(--texto); border-radius: 10px; padding: 8px 2px;
+    cursor: pointer; display: grid; gap: 1px; text-align: center; font: inherit; }
+  .pend-dia span, .pend-dia small { font-size: 11.5px; color: var(--suave); }
+  .pend-dia b { font-size: 17px; }
+  .pend-dia.hoy b { color: var(--marca); }
+  .pend-dia.activo { border-color: var(--marca); box-shadow: inset 0 0 0 1px var(--marca); }
+  .pend-agregar { display: flex; gap: 6px; margin: 12px 0 6px; }
+  .pend-agregar input { flex: 1; }
+  .pend-agregar select { width: auto; }
+  .pend-lista li { border-left: 3px solid var(--borde); padding-left: 10px; }
+  .pend-lista li.p-alta { border-left-color: var(--alta); }
+  .pend-lista li.p-media { border-left-color: var(--media); }
+  .pend-lista li.p-baja { border-left-color: var(--baja); }
+  .pend-lista li.hecho { opacity: .6; }
+  .pend-lista li.vacio { border-left: 0; }
+  .pend-lista input[type=checkbox] { width: 18px; height: 18px; flex: none; margin: 0; cursor: pointer; accent-color: var(--marca); }
+  .pend-lista .chip { margin-left: 6px; }
+  .pend-acc { display: flex; gap: 2px; align-items: center; }
+  .pend-acc .btn-ico { width: 28px; height: 28px; font-size: 15px; }
+  .grupo-pend { margin: 14px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); }
   .log-origen { display: flex; flex-direction: column; gap: 4px; }
   .log-origen [hidden] { display: none !important; }
   .log-agregar input, .log-agregar select { padding: 7px 8px; font-size: 13px; background: var(--panel); }
@@ -445,6 +467,10 @@
 
   /* Celular: las tablas pasan a tarjetas (los títulos de columna los pone etiquetarTablas en App.html). */
   @media (max-width: 640px) {
+    .pend-semana { gap: 3px; }
+    .pend-dia { padding: 6px 0; }
+    .pend-agregar { flex-wrap: wrap; }
+    .pend-agregar input { flex-basis: 100%; }
     .tabla-caja table:not(.matriz) thead { display: none; }
     .tabla-caja table:not(.matriz), .tabla-caja table:not(.matriz) tbody { display: block; width: 100%; }
     .tabla-caja table:not(.matriz) tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; padding: 12px 16px; border-bottom: 1px solid var(--borde); }

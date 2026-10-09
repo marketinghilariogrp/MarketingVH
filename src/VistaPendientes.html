@@ -1,0 +1,194 @@
+<script>
+  // Pendientes: checklist del día por prioridad (admin y coordinación). Ver Pendientes.gs para los permisos.
+  const P = { lista: '', semana: '', dia: '', d: null };
+  const ORDEN_PRIO = { alta: 0, media: 1, baja: 2 };
+  const DIAS_LARGO = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const lunesDe = f => sumarDias(f, -((new Date(f + 'T12:00:00').getDay() + 6) % 7));
+  const ordenPend = (a, b) => (a.hecho - b.hecho) || (ORDEN_PRIO[a.prioridad] - ORDEN_PRIO[b.prioridad]);
+  const OPC_PRIO = [['alta', 'Alta'], ['media', 'Media'], ['baja', 'Baja']];
+  const OPC_RECORDATORIO = [['', 'Sin recordatorio'], ['0', 'A la hora'], ['10', '10 min antes'], ['30', '30 min antes'],
+    ['60', '1 hora antes'], ['120', '2 horas antes'], ['1440', '1 día antes']];
+
+  VISTAS.pendientes = {
+    titulo: 'Pendientes',
+    async pintar() {
+      if (!P.lista) P.lista = S.u.id;
+      if (!P.dia) P.dia = S.hoy || new Date().toISOString().slice(0, 10);
+      P.semana = lunesDe(P.dia);
+      await cargarPendientes();
+    }
+  };
+
+  async function cargarPendientes() {
+    const d = await api('getPendientes', P.lista, P.semana, sumarDias(P.semana, 6));
+    if (S.vista !== 'pendientes') return;
+    P.d = d;
+    pintarPendientes();
+  }
+
+  function itemPend(x, atrasado) {
+    return `<li class="p-${esc(x.prioridad)}${x.hecho ? ' hecho' : ''}" data-id="${esc(x.id)}">
+      <input type="checkbox" data-acc="hecho" ${x.hecho ? 'checked' : ''} aria-label="Hecho">
+      <div><span class="${x.hecho ? 'tachado' : ''}">${esc(x.titulo)}</span>
+        <span class="chip p-${esc(x.prioridad)}">${PRIO_TXT[x.prioridad]}</span>
+        ${x.detalle ? `<small>${esc(x.detalle)}</small>` : ''}
+        ${x.de || x.en_calendario || atrasado ? `<small>${[atrasado && 'Del ' + diaSemana(x.fecha) + ' ' + fmtFecha(x.fecha).slice(0, 5),
+          x.de && 'De: ' + x.de, x.en_calendario && '📅 En el calendario'].filter(Boolean).map(esc).join(' · ')}</small>` : ''}
+      </div>
+      <div class="pend-acc">
+        ${atrasado ? '<button type="button" class="btn mini" data-acc="hoy">Pasar a hoy</button>' : ''}
+        ${x.en_calendario ? '' : '<button type="button" class="btn-ico" data-acc="calendario" title="Pasar al calendario" aria-label="Pasar al calendario">📅</button>'}
+        <button type="button" class="btn-ico" data-acc="editar" title="Editar" aria-label="Editar">✎</button>
+        <button type="button" class="btn-ico" data-acc="eliminar" title="Eliminar" aria-label="Eliminar">×</button>
+      </div></li>`;
+  }
+
+  function pintarPendientes() {
+    const d = P.d;
+    const propia = P.lista === S.u.id;
+    const nombreLista = (d.listas.find(l => l.id === P.lista) || {}).nombre;
+    const delDia = d.items.filter(x => x.fecha === P.dia).sort(ordenPend);
+    const hechos = delDia.filter(x => x.hecho).length;
+    const fin = sumarDias(P.semana, 6);
+    const dias = Array.from({ length: 7 }, (_, i) => sumarDias(P.semana, i));
+    $('#vista').innerHTML = `
+      <div class="toolbar">
+        ${d.listas.length > 1 ? `<div class="pestanas">${d.listas.map(l => `<button class="pestana ${l.id === P.lista ? 'activo' : ''}" data-lista="${esc(l.id)}">${esc(l.nombre)}</button>`).join('')}</div>`
+          : '<p class="sub">Lo que tienes que hacer cada día, ordenado por prioridad.</p>'}
+        ${esAdmin() ? '' : '<button class="btn" id="bParaAdmin">Dejar pendiente al administrador</button>'}
+      </div>
+      <section class="card">
+        <div class="toolbar">
+          <div class="nav-mes">
+            <button type="button" class="btn-ico" data-sem="-7" aria-label="Semana anterior">‹</button>
+            <strong>${fmtFecha(P.semana).slice(0, 5)} – ${fmtFecha(fin)}</strong>
+            <button type="button" class="btn-ico" data-sem="7" aria-label="Semana siguiente">›</button>
+          </div>
+          ${P.dia !== d.hoy ? '<button class="btn mini" id="bHoy">Ir a hoy</button>' : ''}
+        </div>
+        <div class="pend-semana">${dias.map((f, i) => {
+          const del = d.items.filter(x => x.fecha === f);
+          return `<button type="button" class="pend-dia${f === P.dia ? ' activo' : ''}${f === d.hoy ? ' hoy' : ''}" data-dia="${f}">
+            <span>${DIAS[i]}</span><b>${f.slice(8)}</b><small>${del.length ? del.filter(x => x.hecho).length + '/' + del.length : '·'}</small></button>`;
+        }).join('')}</div>
+      </section>
+      <section class="card">
+        <h3>${DIAS_LARGO[(new Date(P.dia + 'T12:00:00').getDay() + 6) % 7]} ${fmtFecha(P.dia)}
+          ${!propia ? `<small class="sub">· lista de ${esc(nombreLista)}</small>` : ''}
+          ${delDia.length ? `<small class="sub">· ${hechos} de ${delDia.length} hechos</small>` : ''}</h3>
+        <form class="pend-agregar" id="fPend">
+          <input name="titulo" maxlength="200" placeholder="${propia ? '¿Qué tienes que hacer?' : 'Pendiente para ' + esc(nombreLista)}" autocomplete="off" required>
+          <select name="prioridad" aria-label="Prioridad">${opciones(OPC_PRIO, 'media')}</select>
+          <button class="btn primario">Agregar</button>
+        </form>
+        ${P.dia === d.hoy && d.atrasados.length ? `<p class="grupo-pend">Atrasados</p>
+          <ul class="lista pend-lista">${d.atrasados.slice().sort(ordenPend).map(x => itemPend(x, true)).join('')}</ul>
+          <p class="grupo-pend">Hoy</p>` : ''}
+        <ul class="lista pend-lista">${delDia.map(x => itemPend(x)).join('') || '<li class="vacio">Nada anotado para este día.</li>'}</ul>
+      </section>
+      ${d.enviados.length ? `<section class="card">
+        <h3>Pendientes que dejaste al administrador</h3>
+        <ul class="lista">${d.enviados.map(x => `<li>
+          <span class="chip p-${esc(x.prioridad)}">${PRIO_TXT[x.prioridad]}</span>
+          <div>${esc(x.titulo)}<small>Enviado el ${fmtFecha(x.enviado)} ${esc(x.enviado.slice(11, 16))}</small></div>
+          <span class="${x.hecho ? 'sube' : 'sub'}">${x.hecho ? '✓ Hecho' : '✓ Agendado'}</span></li>`).join('')}</ul>
+      </section>` : ''}`;
+
+    $('#fPend').onsubmit = async e => {
+      e.preventDefault();
+      const f = Object.fromEntries(new FormData(e.target));
+      if (!f.titulo.trim()) return;
+      try {
+        const x = await api('guardarPendiente', { usuario_id: P.lista, fecha: P.dia, titulo: f.titulo, prioridad: f.prioridad });
+        P.d.items.push(x);
+        pintarPendientes();
+        $('#fPend [name=titulo]').focus();
+      } catch (err) { aviso(err.message, 'error'); }
+    };
+    if ($('#bParaAdmin')) $('#bParaAdmin').onclick = formParaAdmin;
+    if ($('#bHoy')) $('#bHoy').onclick = () => { P.dia = d.hoy; irDia(); };
+
+    $('#vista').onclick = async e => {
+      const lista = e.target.closest('[data-lista]');
+      if (lista) { P.lista = lista.dataset.lista; return cargarPendientes().catch(err => aviso(err.message, 'error')); }
+      const sem = e.target.closest('[data-sem]');
+      if (sem) { P.dia = sumarDias(P.dia, Number(sem.dataset.sem)); return irDia(); }
+      const dia = e.target.closest('[data-dia]');
+      if (dia) { P.dia = dia.dataset.dia; return irDia(); }
+      const b = e.target.closest('[data-acc]');
+      if (!b) return;
+      const id = b.closest('li').dataset.id;
+      const x = P.d.items.concat(P.d.atrasados).find(i => i.id === id);
+      if (!x) return;
+      try {
+        if (b.dataset.acc === 'hecho') { reemplazarPend(await api('marcarPendiente', id, b.checked)); }
+        else if (b.dataset.acc === 'hoy') { await api('guardarPendiente', Object.assign({}, x, { fecha: P.d.hoy })); await cargarPendientes(); }
+        else if (b.dataset.acc === 'editar') formPendiente(x);
+        else if (b.dataset.acc === 'calendario') formPendienteCalendario(x);
+        else if (b.dataset.acc === 'eliminar' && await confirmar(`¿Eliminar «${x.titulo}»?`, 'Eliminar')) {
+          await api('eliminarPendiente', id);
+          P.d.items = P.d.items.filter(i => i.id !== id);
+          P.d.atrasados = P.d.atrasados.filter(i => i.id !== id);
+          pintarPendientes();
+        }
+      } catch (err) { aviso(err.message, 'error'); cargarPendientes().catch(() => {}); }
+    };
+  }
+
+  /** Cambia de día: si sale de la semana cargada, pide la nueva semana. */
+  function irDia() {
+    const semana = lunesDe(P.dia);
+    if (semana === P.semana) return pintarPendientes();
+    P.semana = semana;
+    cargarPendientes().catch(err => aviso(err.message, 'error'));
+  }
+
+  function reemplazarPend(x) {
+    ['items', 'atrasados'].forEach(k => { P.d[k] = P.d[k].map(i => (i.id === x.id ? x : i)); });
+    if (x.hecho) P.d.atrasados = P.d.atrasados.filter(i => i.id !== x.id);
+    pintarPendientes();
+  }
+
+  function formPendiente(x) {
+    modal('Editar pendiente', `
+      <label>Pendiente<input name="titulo" maxlength="200" value="${esc(x.titulo)}" required></label>
+      <label>Detalle (opcional)<textarea name="detalle" rows="3" maxlength="1000">${esc(x.detalle)}</textarea></label>
+      <div class="dos">
+        <label>Prioridad<select name="prioridad">${opciones(OPC_PRIO, x.prioridad)}</select></label>
+        <label>Día<input type="date" name="fecha" value="${esc(x.fecha)}" required></label>
+      </div>`,
+      async f => {
+        await api('guardarPendiente', Object.assign({ id: x.id }, f));
+        await cargarPendientes();
+        aviso('Pendiente actualizado');
+      });
+  }
+
+  function formPendienteCalendario(x) {
+    modal('Pasar al calendario', `
+      <p class="sub">«${esc(x.titulo)}» se agregará a la agenda personal${x.usuario_id === S.u.id ? '' : ' de ' + esc(nombreDe(x.usuario_id))} (solo la ve su dueño).</p>
+      <div class="dos">
+        <label>Día<input type="date" name="fecha" value="${esc(x.fecha)}" required></label>
+        <label>Hora (opcional)<input type="time" name="hora"></label>
+      </div>
+      <label>Recordatorio<select name="recordatorio_min">${opciones(OPC_RECORDATORIO, '')}</select></label>`,
+      async f => {
+        reemplazarPend(await api('pendienteACalendario', x.id, f));
+        if (f.fecha !== x.fecha) await cargarPendientes();
+        aviso('Agregado al calendario');
+      }, 'Agregar al calendario');
+  }
+
+  /** Coordinación → admin: solo qué es y la prioridad. */
+  function formParaAdmin() {
+    modal('Dejar pendiente al administrador', `
+      <label>¿De qué trata?<textarea name="titulo" rows="3" maxlength="200" required placeholder="Ej.: aprobar el presupuesto del evento de Huacho"></textarea></label>
+      <label>Prioridad<select name="prioridad">${opciones(OPC_PRIO, 'media')}</select></label>
+      <p class="sub">El administrador lo recibe en su lista de hoy y le llega una notificación. Tú solo verás la confirmación.</p>`,
+      async f => {
+        await api('guardarPendiente', { para_admin: true, titulo: f.titulo, prioridad: f.prioridad });
+        aviso('Listo: el pendiente quedó agendado para el administrador');
+        await cargarPendientes();
+      }, 'Enviar');
+  }
+</script>

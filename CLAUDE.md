@@ -45,3 +45,6 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
 - Las hojas/columnas nuevas del ESQUEMA se crean solas al primer uso (hoja_ llama a prepararHoja_).
 - Tareas: estado 'pausada' (motivo en pausa_motivo). Cada cambio de estado se guarda en Tareas_historial; el admin ve
   inicio, trabajo efectivo y pausas (solo en horario laboral) y el historial de cada tarea.
+- Pendientes (Pendientes.gs, VistaPendientes.html): checklist por día y prioridad, solo admin/coordinación. El admin ve y
+  edita su lista y la de cada coordinador; un coordinador solo la suya y puede dejarle al admin un pendiente (título +
+  prioridad) del que solo ve la confirmación («enviados»). «Pasar al calendario» crea agenda privada de su dueño.

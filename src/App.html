@@ -14,6 +14,7 @@
   const ICONOS = {
     inicio: 'M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z',
     calendario: 'M4 5h16v16H4zM4 9h16M8 3v4M16 3v4',
+    pendientes: 'M10 6h11M10 12h11M10 18h11M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17',
     tareas: 'M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9',
     solicitudes: 'M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z',
     eventos: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
@@ -203,7 +204,7 @@
     const r = S.u.rol;
     const g = esGestor();
     return [
-      ['General', [['inicio', 'Inicio'], ['notificaciones', 'Notificaciones'], ['calendario', 'Calendario']]],
+      ['General', [['inicio', 'Inicio'], ['notificaciones', 'Notificaciones'], ['calendario', 'Calendario'], g && ['pendientes', 'Pendientes']]],
       ['Operación', [
         ['tareas', g ? 'Producción' : 'Mis tareas'],
         g && ['historico', 'Histórico de tareas'],
