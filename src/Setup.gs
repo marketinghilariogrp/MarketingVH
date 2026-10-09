@@ -43,7 +43,7 @@ const CONFIG_INICIAL = [
     'Pestañas:persona que además recibe esos avisos (reglas separadas por punto y coma)'],
   ['responsable_alquiler', 'Jefferson', 'Responsable de los equipos alquilados en la lista de logística'],
   ['excluidos_pendientes', 'Jefferson', 'Coordinadores cuya lista de pendientes no aparece (Jefferson usa la cuenta de administrador)'],
-  ['calendarios_externos', 'ACADEMIA VH BUSINESS,VITMER HILARIO,eventosnexovhgrp@gmail.com',
+  ['calendarios_externos', 'VITMER HILARIO,eventosnexovhgrp@gmail.com',
     'Otros calendarios de Google (de la cuenta de marketing) que se ven en Calendario, por nombre o ID'],
   ['notif_correo', 'SI', 'SI = cada notificación de la plataforma también llega por correo (desde la cuenta dueña del sistema)']
 ];
