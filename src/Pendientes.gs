@@ -100,7 +100,8 @@ function guardarPendiente(token, d) {
   if (!titulo) throw new Error('Escribe el pendiente.');
   const ahora = ahora_();
   const nombres = mapaNombres_();
-  return conLock_(() => {
+  let aOtro = false;
+  const r = conLock_(() => {
     if (d.id) {
       const p = pendienteEditable_(u, d.id);
       const fecha = texto_(d.fecha, 10) || p.fecha;
@@ -125,12 +126,16 @@ function guardarPendiente(token, d) {
       hecho: 'NO', creado_por: u.id, creado: ahora, actualizado: ahora, completado: '', agenda_id: '', estado: 'activo' };
     agregarFila_('Pendientes', p);
     if (destino !== u.id) {
+      aOtro = true;
       notificar_([destino], 'pendiente', u.nombre + ' te dejó un pendiente',
-        titulo + ' · prioridad ' + prioridad + ' · ' + fmtFechaHora_(fecha, ''), '', '');
+        titulo + ' · prioridad ' + prioridad + ' · ' + fmtFechaHora_(fecha, '') + (detalle ? ' · ' + detalle : ''), '', '');
     }
     log_(u.id, 'crear_pendiente', p.id, (nombres[destino] || '') + ': ' + titulo);
     return pendCliente_(p, nombres);
   });
+  // Un pendiente para otra persona le llega por correo enseguida (sin esperar al trigger de cada minuto).
+  if (aOtro) { try { enviarCorreosNotificaciones(); } catch (e) { console.log('Correo de pendiente: ' + e.message); } }
+  return r;
 }
 
 function marcarPendiente(token, id, hecho) {
