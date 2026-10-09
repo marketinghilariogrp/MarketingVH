@@ -12,7 +12,9 @@ function calendariosExternos_() {
   const elegidos = [];
   const faltan = [];
   buscados.forEach(b => {
-    const c = todos.find(x => x.getId() === b) || todos.find(x => normal_(x.getName()) === normal_(b));
+    let c = todos.find(x => x.getId() === b) || todos.find(x => normal_(x.getName()) === normal_(b));
+    // Un calendario compartido que no está en la lista de la cuenta se puede leer igual por su ID.
+    if (!c && b.indexOf('@') > 0) { try { c = CalendarApp.getCalendarById(b); } catch (e) { c = null; } }
     if (c && elegidos.indexOf(c) < 0) elegidos.push(c); else if (!c) faltan.push(b);
   });
   return { elegidos: elegidos, faltan: faltan, disponibles: faltan.length ? todos.map(c => c.getName()) : [] };
