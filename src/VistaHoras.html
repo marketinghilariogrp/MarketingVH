@@ -46,17 +46,17 @@
     return `<section class="card">
       <div class="cab-card">
         <h3>${otro ? 'Horario de ' + esc(d.persona.nombre) : 'Mi semana'}</h3>
-        ${esGestor() ? `<div class="controles sin-salto">${selectorPersonaSemana()}
+        ${esGestor() ? `<div class="controles sin-salto"><button type="button" class="btn" id="bHorasPasadas">+ Registrar horas pasadas</button>${selectorPersonaSemana()}
           <button type="button" class="btn-ico" data-sem="-1" aria-label="Semana anterior">‹</button>
           <button type="button" class="btn-ico" data-sem="1" aria-label="Semana siguiente">›</button></div>` : ''}
       </div>
       <p class="sub">Semana del ${fmtFecha(d.lunes)} al ${fmtFecha(sumarDias(d.lunes, 6))}.
         ${d.persona.practicante ? `Practicante: ${meta} h semanales en los días que coordines.` : 'Horario: L–V 9:00–18:30 · sáb 9:00–13:00.'}
-        ${esGestor() ? '' : 'Al empezar una nueva semana la lista se reinicia.'}</p>
+        ${esGestor() ? 'Usa ‹ › para ir a semanas anteriores y corregir, o «Registrar horas pasadas».' : 'Al empezar una nueva semana la lista se reinicia. Domingos y feriados también se pueden marcar si te toca cubrir.'}</p>
       <div class="semana">
-        ${d.dias.map((x, i) => `<div class="dia-marca${x.fecha === S.hoy ? ' hoy' : ''}${!x.laborable && !d.persona.practicante ? ' libre' : ''}" data-fecha="${x.fecha}">
+        ${d.dias.map((x, i) => `<div class="dia-marca${x.fecha === S.hoy ? ' hoy' : ''}${!x.laborable && !d.persona.practicante && !x.entrada && !x.eventos.length ? ' libre' : ''}" data-fecha="${x.fecha}">
           <div class="dia-nombre"><b>${DIAS_LARGOS[i]} ${Number(x.fecha.slice(8))}</b>
-            <small>${x.feriado ? 'Feriado' : (!x.laborable && !d.persona.practicante ? 'Día libre' : '')}${x.eventos.length ? ' 🎥 ' + esc(x.eventos.join(', ')) : ''}</small></div>
+            <small>${x.feriado ? 'Feriado · ' : ''}${!x.laborable && !d.persona.practicante ? 'Fuera de horario: todo cuenta como sobretiempo' : ''}${x.eventos.length ? ' 🎥 ' + esc(x.eventos.join(', ')) : ''}</small></div>
           <label>Ingreso<input type="time" data-k="entrada" value="${esc(x.entrada)}" ${x.editable ? '' : 'disabled'}></label>
           <label>Salida<input type="time" data-k="salida" value="${esc(x.salida)}" ${x.editable ? '' : 'disabled'}></label>
           <span class="dia-horas">${x.horas ? fmtNum(x.horas, 2) + ' h' : (x.entrada && !x.salida ? 'Falta salida' : '—')}</span>
@@ -76,7 +76,29 @@
     return `<select id="aPersonaSem" aria-label="Persona">${opciones(personas.map(u => [u.id, u.nombre]), S.personaAsis || S.u.id)}</select>`;
   }
 
+  /** Coordinación/admin: registrar un día que alguien olvidó marcar (cualquier fecha pasada). */
+  function formHorasPasadas() {
+    const personas = S.usuarios.filter(u => u.marcaHoras);
+    modal('Registrar horas pasadas', `
+      <label>Persona<select name="usuario_id" required>${opciones(personas.map(u => [u.id, u.nombre]), S.personaAsis && S.personaAsis !== S.u.id ? S.personaAsis : '', 'Elige…')}</select></label>
+      <label>Día<input type="date" name="fecha" max="${S.hoy}" value="${sumarDias(S.hoy, -1)}" required></label>
+      <div class="dos">
+        <label>Ingreso<input type="time" name="entrada" required></label>
+        <label>Salida<input type="time" name="salida"></label>
+      </div>
+      <p class="sub">Si ese día ya tenía horas registradas, se reemplazan. Domingos y feriados cuentan completos como sobretiempo
+        (compensable si la persona tenía un evento asignado ese día).</p>`,
+      async f => {
+        await api('marcarAsistencia', f);
+        S.personaAsis = f.usuario_id;
+        S.lunesAsis = f.fecha;
+        aviso('Horas registradas');
+        repintar();
+      }, 'Registrar');
+  }
+
   function enlazarSemana(d) {
+    if ($('#bHorasPasadas')) $('#bHorasPasadas').onclick = formHorasPasadas;
     if ($('#aPersonaSem')) $('#aPersonaSem').onchange = e => { S.personaAsis = e.target.value; repintar(); };
     $$('[data-sem]').forEach(b => { b.onclick = () => { S.lunesAsis = sumarDias(d.lunes || S.hoy, 7 * Number(b.dataset.sem)); repintar(); }; });
     $$('.dia-marca input').forEach(inp => {
