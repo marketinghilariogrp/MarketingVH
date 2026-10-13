@@ -13,6 +13,7 @@ function include_(nombre) {
 /** Todo lo que la interfaz necesita al abrir, en una sola llamada. */
 function getInicio(token) {
   const u = sesion_(token);
+  try { cerrarEventosPasados_(); } catch (e) { /* si está ocupado, se cierra en la próxima carga o en el trigger */ }
   const cfg = config_();
   const gestor = esGestor_(u);
   return {

@@ -215,6 +215,7 @@ function sincronizarAhora(token) {
 
 /** Trigger cada hora: pauta + parrillas. */
 function sincronizarFuentes() {
+  try { cerrarEventosPasados_(); } catch (e) { console.log('Eventos: ' + e.message); }
   sincronizarPauta_();
   sincronizarParrillas_();
 }

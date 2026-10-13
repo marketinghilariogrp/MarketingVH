@@ -135,6 +135,7 @@ function listarAgenda(token, desde, hasta) {
 /** Todo lo del mes para el calendario: eventos, agenda, vencimientos de tareas y feriados. */
 function getCalendario(token, mes) {
   const u = sesion_(token);
+  try { cerrarEventosPasados_(); } catch (e) { /* ocupado: se cierra en la próxima carga */ }
   mes = mesValido_(mes);
   const nombres = mapaNombres_();
   const enMes = f => String(f).slice(0, 7) === mes;

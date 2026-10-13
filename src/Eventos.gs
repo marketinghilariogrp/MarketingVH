@@ -65,8 +65,34 @@ function conteoEventos_(eventos) {
   }).sort((a, b) => b.eventos - a.eventos || a.nombre.localeCompare(b.nombre));
 }
 
+/**
+ * Pasa a «realizado» los eventos programados que ya terminaron (su hora de fin, o el fin del día si no tiene)
+ * y marca como «cubierto» al personal asignado. Se ejecuta al abrir eventos/calendario/inicio y cada hora.
+ */
+function cerrarEventosPasados_() {
+  const ahora = ahora_();
+  const fin = e => e.fecha + ' ' + (esHora_(e.hora_fin) && e.hora_fin > (e.hora_inicio || '') ? e.hora_fin : '23:59') + ':00';
+  const terminado = e => e.estado === 'programado' && esFecha_(e.fecha) && fin(e) <= ahora;
+  if (!leerTabla_('Eventos').some(terminado)) return 0;
+  return conLock_(() => {
+    const ids = [];
+    leerTabla_('Eventos').filter(terminado).forEach(e => {
+      Object.assign(e, { estado: 'realizado', actualizada: ahora_() });
+      escribirFila_('Eventos', e);
+      ids.push(e.id);
+    });
+    leerTabla_('Cobertura').filter(c => ids.indexOf(c.evento_id) >= 0 && c.estado === 'asignado').forEach(c => {
+      c.estado = 'cubierto';
+      escribirFila_('Cobertura', c);
+    });
+    if (ids.length) log_('sistema', 'cerrar_eventos', ids.join(','), ids.length + ' evento(s) pasados a realizado');
+    return ids.length;
+  });
+}
+
 function listarEventos(token, mes) {
   const u = sesion_(token);
+  try { cerrarEventosPasados_(); } catch (e) { /* ocupado: se cierra en la próxima carga */ }
   mes = mesValido_(mes);
   const anio = mes.slice(0, 4);
   const delAnio = eventosConPersonal_(e => e.fecha.slice(0, 4) === anio);
