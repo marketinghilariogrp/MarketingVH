@@ -23,7 +23,7 @@ está en `Sistema-gestion-equipo.pdf` (Descargas del usuario); el README resume 
 - NO se conecta la API de Meta Ads (decisión del usuario). La pauta se lee de sus Google Sheets (Fuentes_pauta),
   reconociendo columnas por encabezado (`COLUMNAS_PAUTA` en Pauta.gs).
 - Equipo actual (oct 2026): Rodrigo, Jefferson (coord.), Gabriela (coord.), Blue, Antony, Renzo y Abigail (practicantes),
-  Chris, Cesi. Fran, Jorge, Challs y Henz ya no están. Marcas: Nexo, Academia VH Business, Vyc, Pagape, Marca Personal, EDE.
+  Chris, Cesi, Deysi (CM, desde 29/10/2026). Fran, Jorge, Challs y Henz ya no están. Marcas: Nexo, Academia VH Business, Vyc, Pagape, Marca Personal, EDE.
 - Monedas de pauta: solo Nexo pauta en soles (PEN); el resto en dólares (USD). La cuenta «CA-Huacachina del Norte»
   es de Nexo. NUNCA convertir entre monedas (decisión del usuario): cada monto lleva el símbolo de su cuenta (S/ o $)
   y los totales que mezclan monedas se muestran por separado (`totales_().monedas`, `montoTexto_`).
