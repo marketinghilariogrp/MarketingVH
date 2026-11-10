@@ -412,17 +412,40 @@
   .pend-agregar { display: flex; gap: 6px; margin: 12px 0 6px; }
   .pend-agregar input { flex: 1; }
   .pend-agregar select { width: auto; }
-  .pend-lista li { border-left: 3px solid var(--borde); padding-left: 10px; }
-  .pend-lista li.p-alta { border-left-color: var(--alta); }
-  .pend-lista li.p-media { border-left-color: var(--media); }
-  .pend-lista li.p-baja { border-left-color: var(--baja); }
-  .pend-lista li.hecho { opacity: .6; }
+  .pend-cab { font-size: 26px; margin: 0; letter-spacing: -.01em; }
+  .pend-lista li { align-items: flex-start; padding: 10px 2px; gap: 12px; }
+  .pend-lista li.hecho { opacity: .55; }
+  .pend-texto { flex: 1; min-width: 0; cursor: pointer; }
+  .pend-titulo { font-size: 15.5px; overflow-wrap: anywhere; }
+  .pend-desc { margin-top: 3px; font-size: 13px; color: var(--suave); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; overflow-wrap: anywhere; }
+  .pend-desc * { margin: 0; padding: 0; font-size: inherit; list-style-position: inside; }
+  .pend-desc h2, .pend-desc h3, .pend-desc b, .pend-desc strong { color: var(--texto); }
+  .pend-lista .pend-desc li { display: list-item; border: 0; padding: 0; gap: 0; }
+  .pend-desc ul, .pend-desc ol { padding-left: 2px; }
   .pend-lista li.guardando { opacity: .45; pointer-events: none; }
   .pend-lista li.vacio { border-left: 0; }
-  .pend-lista input[type=checkbox] { width: 18px; height: 18px; flex: none; margin: 0; cursor: pointer; accent-color: var(--marca); }
+  .pend-lista input[type=checkbox] { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; flex: none; margin: 1px 0 0; padding: 0;
+    border: 2px solid var(--suave); border-radius: 50%; background: transparent; cursor: pointer; display: grid; place-items: center; }
+  .pend-lista li.p-alta input[type=checkbox] { border-color: var(--alta); }
+  .pend-lista input[type=checkbox]:checked { background: var(--marca); border-color: var(--marca); }
+  .pend-lista input[type=checkbox]:checked::after { content: '✓'; color: #fff; font-size: 13px; font-weight: 700; line-height: 1; }
+  /* Nota del pendiente (estilo Notas del iPhone) */
+  .nota-titulo { font-size: 22px; font-weight: 700; border: 0 !important; background: transparent !important; padding: 2px 0 !important; }
+  .nota-barra { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 0; border-top: 1px solid var(--borde); border-bottom: 1px solid var(--borde); }
+  .nota-barra button { border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); border-radius: 7px; padding: 5px 10px;
+    cursor: pointer; font: inherit; font-size: 13px; }
+  .nota-barra button:hover { border-color: var(--marca); }
+  .nota-editor { min-height: 260px; max-height: 55vh; overflow: auto; padding: 10px 2px; outline: none; line-height: 1.55; font-size: 15px; overflow-wrap: anywhere; }
+  .nota-editor:empty::before { content: attr(data-ph); color: var(--suave); }
+  .nota-editor h2 { font-size: 21px; margin: .5em 0 .25em; }
+  .nota-editor h3 { font-size: 17px; margin: .5em 0 .25em; }
+  .nota-editor p { margin: 0 0 .4em; }
+  .nota-editor ul, .nota-editor ol { margin: .2em 0 .5em; padding-left: 1.4em; }
   .pend-lista .chip { margin-left: 6px; }
   .pend-acc { display: flex; gap: 2px; align-items: center; }
   .pend-acc .btn-ico { width: 28px; height: 28px; font-size: 15px; }
+  @media (hover: hover) { .pend-lista li .pend-acc { opacity: 0; transition: opacity .15s; } .pend-lista li:hover .pend-acc { opacity: 1; } }
   .grupo-pend { margin: 14px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); }
   .log-origen { display: flex; flex-direction: column; gap: 4px; }
   .log-origen [hidden] { display: none !important; }

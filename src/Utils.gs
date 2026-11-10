@@ -294,6 +294,31 @@ function texto_(v, max) {
   return String(v == null ? '' : v).trim().slice(0, max);
 }
 
+/** Formato permitido en textos enriquecidos (pendientes): sin atributos ni scripts. */
+const ETIQUETAS_HTML_OK = ['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'h2', 'h3', 'p', 'div', 'br', 'ul', 'ol', 'li', 'blockquote'];
+
+/** Deja solo etiquetas de formato básicas, sin atributos. */
+function htmlSeguro_(html, max) {
+  return String(html == null ? '' : html).slice(0, max)
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<(script|style|iframe|object|embed|svg|math)[\s\S]*?<\/\1\s*>/gi, '')
+    .replace(/<\/?([a-z][a-z0-9]*)\b[^>]*>/gi, (m, tag) => {
+      tag = tag.toLowerCase();
+      if (ETIQUETAS_HTML_OK.indexOf(tag) < 0) return '';
+      return m.charAt(1) === '/' ? '</' + tag + '>' : '<' + tag + '>';
+    })
+    .replace(/<[^>]*$/, '')
+    .trim();
+}
+
+/** Texto plano de un HTML (para notificaciones, correos y el calendario). */
+function textoPlano_(html) {
+  return String(html == null ? '' : html)
+    .replace(/<(br|\/p|\/div|\/li|\/h2|\/h3)\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function escHtml_(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

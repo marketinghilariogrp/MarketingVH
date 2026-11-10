@@ -26,18 +26,37 @@
     pintarPendientes();
   }
 
+  /** Formato permitido al mostrar la descripción (el servidor ya la limpia; esto es una segunda barrera). */
+  const ETIQUETAS_NOTA = ['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'H2', 'H3', 'P', 'DIV', 'BR', 'UL', 'OL', 'LI', 'BLOCKQUOTE'];
+  function htmlNota(html) {
+    if (!html) return '';
+    if (!/<\/?(b|strong|i|em|u|s|strike|h2|h3|p|div|br|ul|ol|li|blockquote)\b/i.test(html)) return esc(html).replace(/\n/g, '<br>');
+    const doc = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html');
+    const limpiar = nodo => Array.from(nodo.childNodes).forEach(n => {
+      if (n.nodeType === 3) return;
+      if (n.nodeType !== 1) return n.remove();
+      limpiar(n);
+      if (!ETIQUETAS_NOTA.includes(n.tagName)) { n.replaceWith(...n.childNodes); return; }
+      Array.from(n.attributes).forEach(a => n.removeAttribute(a.name));
+    });
+    const raiz = doc.body.firstChild;
+    limpiar(raiz);
+    return raiz.innerHTML;
+  }
+  const textoNota = html => { const d = document.createElement('div'); d.innerHTML = htmlNota(html); return d.textContent.trim(); };
+
   function itemPend(x) {
     return `<li class="p-${esc(x.prioridad)}${x.hecho ? ' hecho' : ''}${x.guardando ? ' guardando' : ''}" data-id="${esc(x.id)}">
       <input type="checkbox" data-acc="hecho" ${x.hecho ? 'checked' : ''} aria-label="Hecho">
-      <div><span class="${x.hecho ? 'tachado' : ''}">${esc(x.titulo)}</span>
-        <span class="chip p-${esc(x.prioridad)}">${PRIO_TXT[x.prioridad]}</span>
-        ${x.detalle ? `<small>${esc(x.detalle)}</small>` : ''}
+      <div class="pend-texto" data-acc="abrir" title="Abrir nota"><span class="pend-titulo${x.hecho ? ' tachado' : ''}">${esc(x.titulo)}</span>
+        ${x.prioridad !== 'media' ? `<span class="chip p-${esc(x.prioridad)}">${PRIO_TXT[x.prioridad]}</span>` : ''}
+        ${textoNota(x.detalle) ? `<div class="pend-desc">${htmlNota(x.detalle)}</div>` : ''}
         ${x.de || x.en_calendario || x.viene_de ? `<small>${[x.viene_de && '↪ Pasó del ' + diaSemana(x.viene_de) + ' ' + fmtFecha(x.viene_de).slice(0, 5),
           x.de && 'De: ' + x.de, x.en_calendario && '📅 En el calendario'].filter(Boolean).map(esc).join(' · ')}</small>` : ''}
       </div>
       <div class="pend-acc">
         ${x.en_calendario ? '' : '<button type="button" class="btn-ico" data-acc="calendario" title="Pasar al calendario" aria-label="Pasar al calendario">📅</button>'}
-        <button type="button" class="btn-ico" data-acc="editar" title="Editar" aria-label="Editar">✎</button>
+        <button type="button" class="btn-ico" data-acc="abrir" title="Abrir nota" aria-label="Abrir nota">✎</button>
         <button type="button" class="btn-ico" data-acc="eliminar" title="Eliminar" aria-label="Eliminar">×</button>
       </div></li>`;
   }
@@ -85,11 +104,10 @@
         }).join('')}</div>
       </section>
       <section class="card">
-        <h3>${DIAS_LARGO[(new Date(P.dia + 'T12:00:00').getDay() + 6) % 7]} ${fmtFecha(P.dia)}
-          ${!propia ? `<small class="sub">· lista de ${esc(nombreLista)}</small>` : ''}
-          ${delDia.length ? `<small class="sub">· ${hechos} de ${delDia.length} hechos</small>` : ''}</h3>
+        <h2 class="pend-cab">${P.dia === d.hoy ? 'Pendientes hoy' : DIAS_LARGO[(new Date(P.dia + 'T12:00:00').getDay() + 6) % 7] + ' ' + fmtFecha(P.dia).slice(0, 5)}</h2>
+        <p class="sub">${!propia ? 'Lista de ' + esc(nombreLista) + ' · ' : ''}${delDia.length ? hechos + ' de ' + delDia.length + ' hechos · ' : ''}Toca un pendiente para escribir su descripción con formato.</p>
         <form class="pend-agregar" id="fPend">
-          <input name="titulo" maxlength="200" placeholder="${propia ? '¿Qué tienes que hacer?' : 'Pendiente para ' + esc(nombreLista)}" autocomplete="off" required>
+          <input name="titulo" maxlength="500" placeholder="${propia ? '¿Qué tienes que hacer?' : 'Pendiente para ' + esc(nombreLista)}" autocomplete="off" required>
           <select name="prioridad" aria-label="Prioridad">${opciones(OPC_PRIO, 'media')}</select>
           <button class="btn primario">Agregar</button>
         </form>
@@ -146,7 +164,7 @@
           const r = await api('marcarPendiente', id, b.checked);
           if (P.d === d0) reemplazarPend(r);
         }
-        else if (b.dataset.acc === 'editar') formPendiente(x);
+        else if (b.dataset.acc === 'abrir') formPendiente(x);
         else if (b.dataset.acc === 'calendario') formPendienteCalendario(x);
         else if (b.dataset.acc === 'eliminar' && await confirmar(`¿Eliminar «${x.titulo}»?`, 'Eliminar')) {
           P.d.items = P.d.items.filter(i => i.id !== id);
@@ -170,19 +188,49 @@
     pintarPendientes();
   }
 
+  /** Nota del pendiente, al estilo de Notas del iPhone: título y descripción con formato, sin límite práctico. */
+  const BOTONES_NOTA = [
+    ['formatBlock', '<h2>', 'Título', 'Título'], ['formatBlock', '<h3>', 'Subtítulo', 'Subtítulo'], ['formatBlock', '<p>', 'Texto', 'Texto normal'],
+    ['bold', '', '<b>B</b>', 'Negrita'], ['italic', '', '<i>I</i>', 'Cursiva'], ['underline', '', '<u>U</u>', 'Subrayado'],
+    ['strikeThrough', '', '<s>S</s>', 'Tachado'], ['insertUnorderedList', '', '• Lista', 'Lista con viñetas'],
+    ['insertOrderedList', '', '1. Lista', 'Lista numerada'], ['removeFormat', '', '⌫ Formato', 'Quitar formato']];
+
   function formPendiente(x) {
-    modal('Editar pendiente', `
-      <label>Pendiente<input name="titulo" maxlength="200" value="${esc(x.titulo)}" required></label>
-      <label>Detalle (opcional)<textarea name="detalle" rows="3" maxlength="1000">${esc(x.detalle)}</textarea></label>
+    const { form } = modal('Nota', `
+      <input class="nota-titulo" name="titulo" maxlength="500" value="${esc(x.titulo)}" required aria-label="Título">
+      <div class="nota-barra" role="toolbar">${BOTONES_NOTA.map(([c, v, t, a]) =>
+        `<button type="button" data-cmd="${c}" data-val="${esc(v)}" title="${a}" aria-label="${a}">${t}</button>`).join('')}</div>
+      <div class="nota-editor" contenteditable="true" data-ph="Escribe aquí la descripción, ideas, pasos…">${htmlNota(x.detalle)}</div>
       <div class="dos">
         <label>Prioridad<select name="prioridad">${opciones(OPC_PRIO, x.prioridad)}</select></label>
         <label>Día<input type="date" name="fecha" value="${esc(x.fecha)}" required></label>
       </div>`,
       async f => {
-        await api('guardarPendiente', Object.assign({ id: x.id }, f));
-        await cargarPendientes();
-        aviso('Pendiente actualizado');
-      });
+        const ed = $('.nota-editor', form);
+        f.detalle = ed.textContent.trim() ? ed.innerHTML : '';
+        reemplazarPend(Object.assign({}, x, f, { guardando: true }));
+        const r = await api('guardarPendiente', Object.assign({ id: x.id }, f));
+        if (r.fecha !== x.fecha) await cargarPendientes(); else reemplazarPend(r);
+        aviso('Nota guardada');
+      }, 'Guardar', true, true);
+    const ed = $('.nota-editor', form);
+    try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) { /* navegador sin soporte */ }
+    // mousedown para no perder la selección del texto al pulsar los botones.
+    $$('.nota-barra button', form).forEach(b => {
+      b.onmousedown = e => e.preventDefault();
+      b.onclick = () => { ed.focus(); document.execCommand(b.dataset.cmd, false, b.dataset.val || null); };
+    });
+    ed.onkeydown = e => {
+      const k = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && ['b', 'i', 'u'].includes(k)) { e.preventDefault(); document.execCommand({ b: 'bold', i: 'italic', u: 'underline' }[k]); }
+    };
+    // Al pegar desde otro lado se conserva solo el formato permitido.
+    ed.onpaste = e => {
+      const html = e.clipboardData && e.clipboardData.getData('text/html');
+      if (!html) return;
+      e.preventDefault();
+      document.execCommand('insertHTML', false, htmlNota(html));
+    };
   }
 
   function formPendienteCalendario(x) {

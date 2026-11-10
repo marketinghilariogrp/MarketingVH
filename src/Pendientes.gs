@@ -10,6 +10,16 @@
  */
 
 const PRIORIDADES_PEND = ['alta', 'media', 'baja'];
+const MAX_DETALLE_PEND = 45000; // una celda de Sheets admite 50 000 caracteres
+const MAX_TITULO_PEND = 500;
+
+/** Descripción con formato (título, negrita, cursiva, listas…). Lo antiguo en texto plano se convierte. */
+function detallePend_(v) {
+  const s = String(v == null ? '' : v);
+  if (!/<\/?(b|strong|i|em|u|s|strike|h2|h3|p|div|br|ul|ol|li|blockquote)\b/i.test(s)) return escHtml_(s.trim()).replace(/\n/g, '<br>').slice(0, MAX_DETALLE_PEND);
+  const h = htmlSeguro_(s, MAX_DETALLE_PEND);
+  return textoPlano_(h) ? h : '';
+}
 
 /** Listas que u puede ver: la suya y, si es admin, la de cada coordinador activo (menos Config.excluidos_pendientes). */
 function listasPendientes_(u) {
@@ -96,7 +106,7 @@ function guardarPendiente(token, d) {
   exigirGestor_(u);
   d = d || {};
   const prioridad = opcion_(d.prioridad || 'media', PRIORIDADES_PEND, 'Prioridad no válida.');
-  const titulo = texto_(d.titulo, 200);
+  const titulo = texto_(d.titulo, MAX_TITULO_PEND);
   if (!titulo) throw new Error('Escribe el pendiente.');
   const ahora = ahora_();
   const nombres = mapaNombres_();
@@ -105,7 +115,7 @@ function guardarPendiente(token, d) {
       const p = pendienteEditable_(u, d.id);
       const fecha = texto_(d.fecha, 10) || p.fecha;
       if (!esFecha_(fecha)) throw new Error('Fecha no válida.');
-      Object.assign(p, { titulo: titulo, detalle: texto_(d.detalle, 1000), prioridad: prioridad, fecha: fecha, actualizado: ahora });
+      Object.assign(p, { titulo: titulo, detalle: detallePend_(d.detalle), prioridad: prioridad, fecha: fecha, actualizado: ahora });
       escribirFila_('Pendientes', p);
       return pendCliente_(p, nombres);
     }
@@ -118,7 +128,7 @@ function guardarPendiente(token, d) {
       destino = d.usuario_id || u.id;
       if (!puedeVerLista_(u, destino)) throw new Error('No puedes agregar pendientes a esta persona.');
       fecha = texto_(d.fecha, 10);
-      detalle = texto_(d.detalle, 1000);
+      detalle = detallePend_(d.detalle);
       if (!esFecha_(fecha)) throw new Error('Elige el día.');
     }
     const p = { id: uuid_(), usuario_id: destino, fecha: fecha, titulo: titulo, detalle: detalle, prioridad: prioridad,
@@ -174,7 +184,7 @@ function pendienteACalendario(token, id, d) {
     if (!esFecha_(fecha)) throw new Error('Fecha no válida.');
     const recordarEn = momentoRecordatorio_(fecha, hora, recordatorio);
     const a = { id: uuid_(), fecha: fecha, hora: hora, titulo: p.titulo, tipo: 'Pendiente personal', marca: '', campana: '',
-      responsable_id: p.usuario_id, estado: 'pendiente', detalle: p.detalle, origen: 'pendiente:' + p.id,
+      responsable_id: p.usuario_id, estado: 'pendiente', detalle: textoPlano_(p.detalle).slice(0, 2000), origen: 'pendiente:' + p.id,
       creado_por: p.usuario_id, actualizada: ahora_(), privado: 'SI', recordatorio_min: recordatorio,
       recordar_en: recordarEn, recordado: recordarEn && recordarEn <= ahora_() ? 'SI' : 'NO' };
     agregarFila_('Agenda', a);
